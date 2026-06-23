@@ -1,0 +1,96 @@
+/* app/globals.css - עיצוב תורני מסורתי ומכובד למערכת בית הדין */
+
+@import "tailwindcss";
+
+:root {
+  --background: #fdfaf2;
+  --foreground: #2d1e10;
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui;
+  --font-serif: var(--font-serif), ui-serif, Georgia, serif;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* עיצוב גלילה באווירת ספרייה מסורתית */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f5eedc;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d4c5a9;
+  border-radius: 4px;
+  border: 2px solid #f5eedc;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b89c72;
+}
+
+/* לוח קלף תורני ומסורתי */
+.parchment-panel {
+  background: #ffffff;
+  border: 1px solid #eadeca;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px -2px rgba(66, 44, 21, 0.05), 0 2px 8px -1px rgba(66, 44, 21, 0.03);
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.parchment-panel-hover:hover {
+  border-color: #cda851;
+  box-shadow: 0 10px 25px -5px rgba(184, 134, 11, 0.12);
+  transform: translateY(-2px);
+}
+
+/* עיטור ספר מסורתי עליון (בורדר זהב/נחושת עבה) */
+.torah-card {
+  background: #fffefb;
+  border: 1px solid #eadfcd;
+  border-top: 4px solid #b8860b;
+  box-shadow: 0 4px 20px rgba(66, 44, 21, 0.06);
+}
+
+/* כפתורים ופקדים מסורתיים בגווני זהב וברונזה */
+.gold-button {
+  background: linear-gradient(135deg, #c59b27 0%, #a27b18 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(162, 123, 24, 0.2);
+  transition: all 0.2s;
+}
+
+.gold-button:hover {
+  background: linear-gradient(135deg, #d3ab34 0%, #b88a1e 100%);
+  box-shadow: 0 6px 16px rgba(162, 123, 24, 0.3);
+}
+
+.gold-button:active {
+  transform: scale(0.98);
+}
+
+/* קו מפריד מסוגנן ומסורתי באווירת ספרי קודש */
+.traditional-divider {
+  height: 2px;
+  background: linear-gradient(to right, transparent, #cda851, #8b5a2b, #cda851, transparent);
+  margin: 1.5rem 0;
+}
+
+.text-serif {
+  font-family: var(--font-serif);
+}
