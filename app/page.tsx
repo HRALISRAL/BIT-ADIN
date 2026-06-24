@@ -133,6 +133,40 @@ export default function Home() {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    setAuthError("");
+    setAuthSuccess("");
+    try {
+      if (isMockMode || !supabase) {
+        const mockProfile = profiles.find(p => p.system_role === 'secretariat') || profiles[0];
+        if (!mockProfile) return;
+        if (typeof window !== "undefined") {
+          localStorage.setItem("current_user_id", mockProfile.id);
+          localStorage.setItem("current_user_role", mockProfile.system_role);
+        }
+        setAuthSuccess("התחברת בהצלחה (מצב סימולציה)!");
+        setTimeout(() => {
+          if (mockProfile.system_role === 'secretariat') {
+            router.push("/dashboard/secretariat");
+          } else {
+            router.push(`/dashboard/client?userId=${mockProfile.id}`);
+          }
+        }, 1000);
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      setAuthError(err.message || "שגיאה בהתחברות עם Google.");
+    }
+  };
+
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center px-4 py-16 sm:px-6 lg:px-8 bg-[#fdfaf2] overflow-hidden">
       
@@ -406,6 +440,38 @@ export default function Home() {
                     <ArrowRight className="h-5 w-5" />
                   </button>
                 </form>
+
+                <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-[#eadeca]"></div>
+                  <span className="flex-shrink mx-4 text-[#5c4a3c] text-[10px] font-bold">או</span>
+                  <div className="flex-grow border-t border-[#eadeca]"></div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-white border border-[#eadeca] text-[#2d1e10] hover:bg-[#faf6ee] font-bold active:scale-95 transition-all text-xs cursor-pointer shadow-sm"
+                >
+                  <svg className="h-4 w-4 animate-none" viewBox="0 0 24 24">
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.48 14.97 1 12 1 7.35 1 3.4 3.65 1.5 7.5l3.86 3C6.27 7.58 8.87 5.04 12 5.04z"
+                    />
+                    <path
+                      fill="#4285F4"
+                      d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.44c-.28 1.47-1.11 2.71-2.36 3.55l3.67 2.84c2.14-1.97 3.74-4.88 3.74-8.54z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.36 14.49c-.24-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29L1.5 6.91C.54 8.93 0 11.19 0 13.59s.54 4.66 1.5 6.68l3.86-3.09-.27-.69z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.67-2.84c-1.02.68-2.33 1.09-4.29 1.09-3.13 0-5.73-2.54-6.64-5.96L1.5 16.38C3.4 20.35 7.35 23 12 23z"
+                    />
+                  </svg>
+                  <span>התחבר באמצעות Google</span>
+                </button>
               </>
             )}
 
