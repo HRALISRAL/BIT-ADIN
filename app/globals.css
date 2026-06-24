@@ -21,6 +21,11 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
   overflow-x: hidden;
+  text-align: right;
+}
+
+input, select, textarea {
+  text-align: right;
 }
 
 /* עיצוב גלילה באווירת ספרייה מסורתית */

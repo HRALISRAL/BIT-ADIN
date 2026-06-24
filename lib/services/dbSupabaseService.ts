@@ -200,18 +200,27 @@ export const dbSupabaseService = {
       .eq('hearing_id', hearingId);
     if (error) throw error;
 
-    return data.map((d: any) => ({
-      id: d.id,
-      hearing_id: d.hearing_id,
-      case_id: d.case_id,
-      uploaded_by: d.uploaded_by,
-      file_path: d.file_path,
-      file_name: d.file_name,
-      document_type: d.document_type,
-      is_shared: d.is_shared,
-      created_at: d.created_at,
-      uploader_name: d.profiles?.full_name || 'משתמש לא ידוע'
-    }));
+    return data.map((d: any) => {
+      let resolvedPath = d.file_path;
+      if (d.file_path && !d.file_path.startsWith('http') && !d.file_path.startsWith('/mock')) {
+        const { data: urlData } = supabase.storage
+          .from('court-documents')
+          .getPublicUrl(d.file_path);
+        resolvedPath = urlData?.publicUrl || d.file_path;
+      }
+      return {
+        id: d.id,
+        hearing_id: d.hearing_id,
+        case_id: d.case_id,
+        uploaded_by: d.uploaded_by,
+        file_path: resolvedPath,
+        file_name: d.file_name,
+        document_type: d.document_type,
+        is_shared: d.is_shared,
+        created_at: d.created_at,
+        uploader_name: d.profiles?.full_name || 'משתמש לא ידוע'
+      };
+    });
   },
 
   async uploadDocument(supabase: SupabaseClient, hearingId: string, userId: string, documentType: DocumentType, fileName: string, fileBlobMockUrl?: string): Promise<Document> {
