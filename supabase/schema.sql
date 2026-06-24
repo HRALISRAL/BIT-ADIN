@@ -18,7 +18,7 @@ CREATE TYPE request_status_type AS ENUM ('pending', 'approved', 'rejected');
 
 -- א. טבלת פרופילים (משתמשי המערכת, מבוסס על auth.users)
 CREATE TABLE public.profiles (
-    id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
+    id UUID PRIMARY KEY, -- במצב חי מוגדר כמזהה של auth.users אך מסירים את ה-fkey כדי לאפשר רישום מוקדם של המזכירות לפני ה-Auth
     full_name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     phone TEXT,
@@ -49,7 +49,7 @@ CREATE TABLE public.cases (
 CREATE TABLE public.case_participants (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     case_id UUID REFERENCES public.cases(id) ON DELETE CASCADE NOT NULL,
-    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES public.profiles(id) ON UPDATE CASCADE ON DELETE CASCADE NOT NULL,
     party_role party_role_type NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     UNIQUE(case_id, user_id)
@@ -71,7 +71,7 @@ CREATE TABLE public.documents (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     hearing_id UUID REFERENCES public.hearings(id) ON DELETE CASCADE NOT NULL,
     case_id UUID REFERENCES public.cases(id) ON DELETE CASCADE NOT NULL, -- שיוך ישיר לתיק לצורך אבטחה
-    uploaded_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL NOT NULL,
+    uploaded_by UUID REFERENCES public.profiles(id) ON UPDATE CASCADE ON DELETE SET NULL NOT NULL,
     file_path TEXT NOT NULL, -- נתיב ב-Storage Bucket
     file_name TEXT NOT NULL,
     document_type document_type_type NOT NULL,
@@ -84,7 +84,7 @@ CREATE TABLE public.requests (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     case_id UUID REFERENCES public.cases(id) ON DELETE CASCADE NOT NULL,
     hearing_id UUID REFERENCES public.hearings(id) ON DELETE SET NULL,
-    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES public.profiles(id) ON UPDATE CASCADE ON DELETE CASCADE NOT NULL,
     request_type request_type_type NOT NULL,
     title TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -293,15 +293,36 @@ ON public.audit_logs FOR SELECT TO authenticated USING (public.is_secretariat())
 -- חסימת Privilege Escalation: תפקיד המשתמש החדש נקבע קשיח כ-litigant
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+    profile_count INT;
 BEGIN
-    INSERT INTO public.profiles (id, full_name, email, phone, system_role)
-    VALUES (
-        NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'full_name', 'משתמש חדש'),
-        NEW.email,
-        NEW.raw_user_meta_data->>'phone',
-        'litigant'::system_role_type -- ערך קשיח ומאובטח בלבד
-    );
+    SELECT COUNT(*) INTO profile_count FROM public.profiles;
+
+    -- אם אין פרופילים בכלל, מאפשרים הרשמה של המשתמש הראשון כמזכירות (לצורך אתחול)
+    IF profile_count = 0 THEN
+        INSERT INTO public.profiles (id, full_name, email, phone, system_role)
+        VALUES (
+            NEW.id,
+            COALESCE(NEW.raw_user_meta_data->>'full_name', 'מזכירות'),
+            NEW.email,
+            NEW.raw_user_meta_data->>'phone',
+            'secretariat'::system_role_type
+        );
+    ELSE
+        -- בדיקה האם המייל כבר רשום מראש על ידי המזכירות
+        IF EXISTS (SELECT 1 FROM public.profiles WHERE email = NEW.email) THEN
+            -- עדכון מזהה ה-UUID של הפרופיל הקיים למזהה החדש של auth.users
+            -- בזכות ON UPDATE CASCADE, מזהה זה יעודכן אוטומטית בכל הטבלאות המקושרות!
+            UPDATE public.profiles 
+            SET id = NEW.id,
+                full_name = COALESCE(NEW.raw_user_meta_data->>'full_name', full_name),
+                phone = COALESCE(NEW.raw_user_meta_data->>'phone', phone)
+            WHERE email = NEW.email;
+        ELSE
+            -- חסימת הרשמה למי שלא רשום מראש
+            RAISE EXCEPTION 'הרישום חסום: כתובת המייל אינה רשומה במערכת על ידי המזכירות.';
+        END IF;
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
