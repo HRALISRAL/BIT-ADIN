@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { 
   Scale, Calendar, FileText, CheckCircle2, XCircle, Clock, 
@@ -75,7 +75,9 @@ export default function SecretariatDashboard() {
 
   // שדות העלאת קובץ
   const [uploadFileName, setUploadFileName] = useState("");
+  const [selectedFileObject, setSelectedFileObject] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // טעינת נתונים
   const loadData = async () => {
@@ -280,19 +282,43 @@ export default function SecretariatDashboard() {
     
     try {
       setUploading(true);
+      
+      const uId = (typeof window !== "undefined" && localStorage.getItem("current_user_id")) || "sec-1";
+      let filePath = "";
+      if (isMockMode || !supabase) {
+        filePath = `/mock/sec_upload_${Date.now()}_${uploadFileName}`;
+      } else {
+        if (!selectedFileObject) {
+          throw new Error("נא לבחור קובץ להעלאה מהמחשב.");
+        }
+        const fileExt = selectedFileObject.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+        const storagePath = `${uId}/${fileName}`;
+        
+        const { data: storageData, error: storageErr } = await supabase.storage
+          .from('court-documents')
+          .upload(storagePath, selectedFileObject);
+          
+        if (storageErr) throw storageErr;
+        filePath = storagePath;
+      }
+      
       await dbService.uploadDocument(
         selectedHearing.id,
-        "sec-1",
+        uId,
         "secretariat",
         uploadFileName.trim(),
-        `/mock/sec_upload_${Date.now()}_${uploadFileName}`
+        filePath
       );
       setUploadFileName("");
+      setSelectedFileObject(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       
-      const docs = await dbService.getDocuments(selectedHearing.id, "sec-1", "secretariat");
+      const docs = await dbService.getDocuments(selectedHearing.id, uId, "secretariat");
       setHearingDocs(docs);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to upload document:", err);
+      alert("שגיאה בהעלאת הקובץ: " + (err.message || err));
     } finally {
       setUploading(false);
     }
@@ -1304,23 +1330,53 @@ export default function SecretariatDashboard() {
                   <Upload className="h-4 w-4 text-[#8b5a2b]" />
                   <span>העלאת החלטה / פרוטוקול בית הדין</span>
                 </h4>
-                <form onSubmit={handleSecUpload} className="flex gap-2">
+                <form onSubmit={handleSecUpload} className="space-y-3">
                   <input
-                    type="text"
-                    placeholder="שם או כותרת המסמך (לדוגמה: פרוטוקול דיון מיום 14.6)"
-                    value={uploadFileName}
-                    onChange={(e) => setUploadFileName(e.target.value)}
-                    className="flex-1 bg-white border border-[#eadeca] rounded-lg px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
-                    required
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setSelectedFileObject(e.target.files[0]);
+                        if (!uploadFileName) {
+                          setUploadFileName(e.target.files[0].name);
+                        }
+                      }
+                    }}
+                    className="hidden"
+                    id="sec-file-upload"
                   />
-                  <button
-                    type="submit"
-                    disabled={uploading}
-                    className="px-4 py-2 rounded-lg gold-button font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 text-xs"
-                  >
-                    <Plus className="h-3 w-3" />
-                    <span>{uploading ? 'מעלה...' : 'העלה'}</span>
-                  </button>
+
+                  <div className="flex flex-col gap-3">
+                    <input
+                      type="text"
+                      placeholder="שם או כותרת המסמך (לדוגמה: פרוטוקול דיון מיום 14.6)"
+                      value={uploadFileName}
+                      onChange={(e) => setUploadFileName(e.target.value)}
+                      className="w-full bg-white border border-[#eadeca] rounded-lg px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
+                      required
+                    />
+
+                    <div className="flex gap-2 items-center">
+                      <label
+                        htmlFor="sec-file-upload"
+                        className="flex-1 flex items-center justify-center border border-dashed border-[#eadeca] hover:border-[#cda851] rounded-lg p-2.5 bg-white cursor-pointer transition-all gap-1.5 text-[11px] font-bold text-[#5c4a3c] truncate"
+                      >
+                        <Upload className="h-3.5 w-3.5 text-[#8b5a2b]" />
+                        <span className="truncate">
+                          {selectedFileObject ? `קובץ: ${selectedFileObject.name}` : "בחר קובץ מהמחשב"}
+                        </span>
+                      </label>
+
+                      <button
+                        type="submit"
+                        disabled={uploading || !uploadFileName.trim() || (!isMockMode && !selectedFileObject)}
+                        className="px-4 py-2.5 rounded-lg gold-button font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 text-xs flex-shrink-0"
+                      >
+                        <Plus className="h-3 w-3" />
+                        <span>{uploading ? 'מעלה...' : 'העלה'}</span>
+                      </button>
+                    </div>
+                  </div>
                 </form>
               </div>
 

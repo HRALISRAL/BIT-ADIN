@@ -32,6 +32,7 @@ function ClientDashboardContent() {
   const [loading, setLoading] = useState(true);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [uploadFileSelectorName, setUploadFileSelectorName] = useState("");
+  const [selectedFileObject, setSelectedFileObject] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -111,21 +112,42 @@ function ClientDashboardContent() {
     try {
       setUploading(true);
       
+      let filePath = "";
+      if (isMockMode || !supabase) {
+        filePath = `/mock/client_upload_${Date.now()}_${uploadFileSelectorName}`;
+      } else {
+        if (!selectedFileObject) {
+          throw new Error("נא לבחור קובץ להעלאה מהמחשב.");
+        }
+        const fileExt = selectedFileObject.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+        const storagePath = `${currentUser.id}/${fileName}`;
+        
+        const { data: storageData, error: storageErr } = await supabase.storage
+          .from('court-documents')
+          .upload(storagePath, selectedFileObject);
+          
+        if (storageErr) throw storageErr;
+        filePath = storagePath;
+      }
+      
       await dbService.uploadDocument(
         activeHearing.id,
         currentUser.id,
         userRoleInActiveCase as DocumentType,
         uploadFileSelectorName.trim(),
-        `/mock/client_upload_${Date.now()}_${uploadFileSelectorName}`
+        filePath
       );
 
       setUploadFileSelectorName("");
+      setSelectedFileObject(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
 
       const docs = await dbService.getDocuments(activeHearing.id, currentUser.id, "litigant");
       setActiveHearingDocs(docs);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to upload file:", err);
+      alert("שגיאה בהעלאת הקובץ: " + (err.message || err));
     } finally {
       setUploading(false);
     }
@@ -403,22 +425,50 @@ function ClientDashboardContent() {
                   </div>
 
                   <form onSubmit={handleUploadDocumentSubmit} className="space-y-3">
-                    <div className="flex gap-2">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          setSelectedFileObject(e.target.files[0]);
+                          if (!uploadFileSelectorName) {
+                            setUploadFileSelectorName(e.target.files[0].name);
+                          }
+                        }
+                      }}
+                      className="hidden"
+                      id="client-file-upload"
+                    />
+
+                    <div className="flex flex-col gap-3">
                       <input
                         type="text"
                         placeholder="כותרת המסמך (לדוגמה: נימוקים נוספים לתביעה)"
                         value={uploadFileSelectorName}
                         onChange={(e) => setUploadFileSelectorName(e.target.value)}
-                        className="flex-1 bg-white border border-[#eadeca] rounded-lg px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
+                        className="w-full bg-white border border-[#eadeca] rounded-lg px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
                         required
                       />
-                      <button
-                        type="submit"
-                        disabled={uploading || !uploadFileSelectorName.trim()}
-                        className="px-4 py-2 rounded-lg gold-button font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50 text-xs"
-                      >
-                        <span>{uploading ? 'מעלה...' : 'העלה מסמך'}</span>
-                      </button>
+
+                      <div className="flex gap-2 items-center">
+                        <label
+                          htmlFor="client-file-upload"
+                          className="flex-1 flex items-center justify-center border border-dashed border-[#eadeca] hover:border-[#cda851] rounded-lg p-2.5 bg-white cursor-pointer transition-all gap-1.5 text-[11px] font-bold text-[#5c4a3c] truncate"
+                        >
+                          <Upload className="h-3.5 w-3.5 text-[#8b5a2b]" />
+                          <span className="truncate">
+                            {selectedFileObject ? `קובץ: ${selectedFileObject.name}` : "בחר קובץ מהמחשב"}
+                          </span>
+                        </label>
+
+                        <button
+                          type="submit"
+                          disabled={uploading || !uploadFileSelectorName.trim() || (!isMockMode && !selectedFileObject)}
+                          className="px-5 py-2.5 rounded-lg gold-button font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50 text-xs flex-shrink-0"
+                        >
+                          <span>{uploading ? 'מעלה...' : 'העלה מסמך'}</span>
+                        </button>
+                      </div>
                     </div>
                   </form>
                 </div>
