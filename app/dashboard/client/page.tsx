@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { dbService } from "./../../../lib/services/dbService";
 import { UserProfile, Case, Hearing, Document, ClientRequest, DocumentType } from "../../../types";
+import { isMockMode, supabase } from "./../../../lib/supabase/client";
 
 function ClientDashboardContent() {
   const router = useRouter();
@@ -197,8 +198,11 @@ function ClientDashboardContent() {
 
           <div className="flex items-center gap-4">
             <button
-              onClick={() => {
+              onClick={async () => {
                 localStorage.clear();
+                if (!isMockMode && supabase) {
+                  await supabase.auth.signOut();
+                }
                 router.push("/");
               }}
               className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-[#faf6ee] border border-[#eadeca] text-[#5c4a3c] hover:bg-[#f3eedf] transition-all cursor-pointer"

@@ -1,13 +1,15 @@
 // app/page.tsx - דף נחיתה ראשי ומסך בחירת משתמשים בעיצוב תורני מסורתי
-
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Scale, Users, Calendar, ArrowRight, ShieldCheck, Database, BookOpen, FileText } from "lucide-react";
+import { 
+  Scale, Users, Calendar, ArrowRight, ShieldCheck, Database, 
+  BookOpen, FileText, Lock, Mail, User, Phone, AlertCircle, CheckCircle2 
+} from "lucide-react";
 import { dbService } from "./../lib/services/dbService";
 import { UserProfile } from "../types";
-import { isMockMode } from "./../lib/supabase/client";
+import { isMockMode, supabase } from "./../lib/supabase/client";
 import { maskName } from "../lib/utils/masking";
 
 export default function Home() {
@@ -17,13 +19,25 @@ export default function Home() {
   const [selectedProfile, setSelectedProfile] = useState<string>("");
   const [courtName, setCourtName] = useState("בית הדין הרבני האזורי ירושלים");
 
+  // מצבי אימות Supabase
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authError, setAuthError] = useState("");
+  const [authSuccess, setAuthSuccess] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+
   useEffect(() => {
     async function loadProfiles() {
       try {
-        const data = await dbService.getProfiles();
-        setProfiles(data);
-        if (data.length > 0) {
-          setSelectedProfile(data[0].id);
+        if (isMockMode) {
+          const data = await dbService.getProfiles();
+          setProfiles(data);
+          if (data.length > 0) {
+            setSelectedProfile(data[0].id);
+          }
         }
         setCourtName(dbService.getBetDinName());
       } catch (err) {
@@ -35,7 +49,7 @@ export default function Home() {
     loadProfiles();
   }, []);
 
-  const handleLogin = () => {
+  const handleMockLogin = () => {
     const profile = profiles.find(p => p.id === selectedProfile);
     if (!profile) return;
 
@@ -48,6 +62,74 @@ export default function Home() {
       router.push("/dashboard/secretariat");
     } else {
       router.push(`/dashboard/client?userId=${profile.id}`);
+    }
+  };
+
+  const handleRealAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthSuccess("");
+    setAuthLoading(true);
+
+    try {
+      if (!supabase) {
+        throw new Error("לקוח Supabase אינו מאותחל כראוי.");
+      }
+
+      if (authMode === "login") {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password: password,
+        });
+        if (error) throw error;
+
+        if (data.user) {
+          // שליפת הפרופיל לקבלת התפקיד
+          const profile = await dbService.getProfile(data.user.id);
+          if (!profile) {
+            throw new Error("לא נמצא פרופיל משתמש תואם במערכת.");
+          }
+
+          if (typeof window !== "undefined") {
+            localStorage.setItem("current_user_id", profile.id);
+            localStorage.setItem("current_user_role", profile.system_role);
+          }
+
+          setAuthSuccess("התחברת בהצלחה! מנתב ללוח הבקרה...");
+          setTimeout(() => {
+            if (profile.system_role === "secretariat") {
+              router.push("/dashboard/secretariat");
+            } else {
+              router.push(`/dashboard/client?userId=${profile.id}`);
+            }
+          }, 1000);
+        }
+      } else {
+        // הרשמה
+        if (!fullName.trim()) {
+          throw new Error("נא למלא שם מלא.");
+        }
+        
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password: password,
+          options: {
+            data: {
+              full_name: fullName.trim(),
+              phone: phone.trim(),
+            }
+          }
+        });
+        if (error) throw error;
+
+        setAuthSuccess("הרשמה בוצעה בהצלחה! במידה ואישור אימייל נדרש בסביבה זו, אנא אשר את חשבונך במייל. כעת באפשרותך להתחבר.");
+        setAuthMode("login");
+        setPassword("");
+      }
+    } catch (err: any) {
+      setAuthError(err.message || "שגיאה בתהליך האימות.");
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -79,10 +161,15 @@ export default function Home() {
         </div>
 
         {/* מצב הדגמה / אזהרה */}
-        {isMockMode && (
+        {isMockMode ? (
           <div className="parchment-panel flex items-center gap-3 p-4 mb-8 rounded-xl border border-amber-600/20 bg-amber-50/30 text-[#8b5a2b] max-w-md mx-auto text-xs justify-center font-bold">
             <Database className="h-5 w-5 flex-shrink-0 text-[#a27b18]" />
             <span>המערכת פועלת כעת ב-<strong>מצב סימולציה מקומי</strong> (ללא צורך ב-Supabase)</span>
+          </div>
+        ) : (
+          <div className="parchment-panel flex items-center gap-3 p-4 mb-8 rounded-xl border border-emerald-600/20 bg-emerald-50/30 text-emerald-800 max-w-md mx-auto text-xs justify-center font-bold">
+            <ShieldCheck className="h-5 w-5 flex-shrink-0 text-emerald-700" />
+            <span>המערכת מחוברת באופן מאובטח ל-<strong>Supabase</strong> (סביבה חיה)</span>
           </div>
         )}
 
@@ -135,61 +222,193 @@ export default function Home() {
             </div>
           </div>
 
-          {/* כרטיס כניסה מהיר */}
+          {/* כרטיס כניסה מהיר (מצב סימולציה) או טופס התחברות אמיתי (מצב חי) */}
           <div className="parchment-panel p-8 rounded-2xl flex flex-col justify-center border-[#eadeca] torah-card">
-            <h2 className="text-xl font-bold text-serif text-[#2d1e10] mb-2">
-              כניסה מורשית למערכת
-            </h2>
-            <p className="text-xs text-[#5c4a3c] mb-6 font-medium">
-              בחר את בעל התפקיד המורשה לצורך כניסה וניהול התיקים:
-            </p>
+            
+            {isMockMode ? (
+              // ממשק כניסה מדומה
+              <>
+                <h2 className="text-xl font-bold text-serif text-[#2d1e10] mb-2">
+                  כניסה מורשית למערכת
+                </h2>
+                <p className="text-xs text-[#5c4a3c] mb-6 font-medium">
+                  בחר את בעל התפקיד המורשה לצורך כניסה וניהול התיקים:
+                </p>
 
-            {loading ? (
-              <div className="flex flex-col items-center justify-center py-8">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#a27b18] border-t-transparent" />
-                <span className="mt-2 text-[#5c4a3c] text-xs font-bold">טוען משתמשים...</span>
-              </div>
+                {loading ? (
+                  <div className="flex flex-col items-center justify-center py-8">
+                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#a27b18] border-t-transparent" />
+                    <span className="mt-2 text-[#5c4a3c] text-xs font-bold">טוען משתמשים...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-xs font-bold text-[#2d1e10] mb-2">
+                        בחר משתמש להתחברות:
+                      </label>
+                      <select
+                        value={selectedProfile}
+                        onChange={(e) => setSelectedProfile(e.target.value)}
+                        className="w-full bg-white border border-[#eadeca] rounded-xl px-4 py-3 text-[#2d1e10] font-medium focus:outline-none focus:ring-2 focus:ring-[#cda851] focus:border-transparent transition-all text-xs"
+                      >
+                        {profiles.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.system_role === "secretariat" ? p.full_name : maskName(p.full_name)} ({p.system_role === "secretariat" ? "סגל מזכירות" : "בעל דין"})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* תצוגת פרטי המשתמש הנבחר */}
+                    {(() => {
+                      const p = profiles.find(prof => prof.id === selectedProfile);
+                      if (!p) return null;
+                      return (
+                        <div className="p-4 rounded-xl bg-[#faf6ee]/60 border border-[#eadeca] text-xs text-[#5c4a3c] space-y-2 font-medium">
+                          <div><strong className="text-[#2d1e10]">שם בעל התפקיד:</strong> {p.system_role === "secretariat" ? p.full_name : maskName(p.full_name)}</div>
+                          <div><strong className="text-[#2d1e10]">דואר אלקטרוני:</strong> {p.system_role === "secretariat" ? p.email : p.email.charAt(0) + "***" + p.email.slice(p.email.indexOf("@") - 1)}</div>
+                          <div><strong className="text-[#2d1e10]">סמכות במערכת:</strong> {p.system_role === "secretariat" ? "מזכירות בית הדין" : "בעל דין פעיל"}</div>
+                        </div>
+                      );
+                    })()}
+
+                    <button
+                      onClick={handleMockLogin}
+                      className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl gold-button font-bold hover:opacity-95 active:scale-95 transition-all text-sm cursor-pointer"
+                    >
+                      <span>הכנס לממשק בית הדין</span>
+                      <ArrowRight className="h-5 w-5" />
+                    </button>
+                  </div>
+                )}
+              </>
             ) : (
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-xs font-bold text-[#2d1e10] mb-2">
-                    בחר משתמש להתחברות:
-                  </label>
-                  <select
-                    value={selectedProfile}
-                    onChange={(e) => setSelectedProfile(e.target.value)}
-                    className="w-full bg-white border border-[#eadeca] rounded-xl px-4 py-3 text-[#2d1e10] font-medium focus:outline-none focus:ring-2 focus:ring-[#cda851] focus:border-transparent transition-all text-xs"
+              // ממשק כניסה אמיתי מול Supabase Auth
+              <>
+                <h2 className="text-xl font-bold text-serif text-[#2d1e10] mb-2">
+                  אימות כניסה מאובטח
+                </h2>
+                <p className="text-xs text-[#5c4a3c] mb-6 font-medium">
+                  הזדהות בעלי דין ומזכירות בית הדין
+                </p>
+
+                {/* בורר מצבים: התחברות או הרשמה */}
+                <div className="flex border-b border-[#eadeca] mb-6 text-xs font-bold font-serif">
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode("login"); setAuthError(""); setAuthSuccess(""); }}
+                    className={`flex-1 pb-3 text-center transition-all cursor-pointer ${
+                      authMode === "login"
+                        ? "border-b-2 border-[#a27b18] text-[#a27b18]"
+                        : "text-[#5c4a3c] hover:text-[#2d1e10]"
+                    }`}
                   >
-                    {profiles.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.system_role === "secretariat" ? p.full_name : maskName(p.full_name)} ({p.system_role === "secretariat" ? "סגל מזכירות" : "בעל דין"})
-                      </option>
-                    ))}
-                  </select>
+                    התחברות
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode("signup"); setAuthError(""); setAuthSuccess(""); }}
+                    className={`flex-1 pb-3 text-center transition-all cursor-pointer ${
+                      authMode === "signup"
+                        ? "border-b-2 border-[#a27b18] text-[#a27b18]"
+                        : "text-[#5c4a3c] hover:text-[#2d1e10]"
+                    }`}
+                  >
+                    הרשמה כבעל דין
+                  </button>
                 </div>
 
-                {/* תצוגת פרטי המשתמש הנבחר */}
-                {(() => {
-                  const p = profiles.find(prof => prof.id === selectedProfile);
-                  if (!p) return null;
-                  return (
-                    <div className="p-4 rounded-xl bg-[#faf6ee]/60 border border-[#eadeca] text-xs text-[#5c4a3c] space-y-2 font-medium">
-                      <div><strong className="text-[#2d1e10]">שם בעל התפקיד:</strong> {p.system_role === "secretariat" ? p.full_name : maskName(p.full_name)}</div>
-                      <div><strong className="text-[#2d1e10]">דואר אלקטרוני:</strong> {p.system_role === "secretariat" ? p.email : p.email.charAt(0) + "***" + p.email.slice(p.email.indexOf("@") - 1)}</div>
-                      <div><strong className="text-[#2d1e10]">סמכות במערכת:</strong> {p.system_role === "secretariat" ? "מזכירות בית הדין" : "בעל דין פעיל"}</div>
-                    </div>
-                  );
-                })()}
+                <form onSubmit={handleRealAuth} className="space-y-4 text-xs font-semibold text-[#2d1e10]">
+                  {authMode === "signup" && (
+                    <>
+                      <div>
+                        <label className="block mb-1.5 font-bold">שם מלא:</label>
+                        <div className="relative">
+                          <User className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8b5a2b]" />
+                          <input
+                            type="text"
+                            placeholder="ישראל ישראלי"
+                            value={fullName}
+                            onChange={(e) => setFullName(e.target.value)}
+                            className="w-full bg-white border border-[#eadeca] rounded-xl pr-10 pl-4 py-3 focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
+                            required
+                          />
+                        </div>
+                      </div>
 
-                <button
-                  onClick={handleLogin}
-                  className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl gold-button font-bold hover:opacity-95 active:scale-95 transition-all text-sm cursor-pointer"
-                >
-                  <span>הכנס לממשק בית הדין</span>
-                  <ArrowRight className="h-5 w-5" />
-                </button>
-              </div>
+                      <div>
+                        <label className="block mb-1.5 font-bold">מספר טלפון:</label>
+                        <div className="relative">
+                          <Phone className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8b5a2b]" />
+                          <input
+                            type="tel"
+                            placeholder="050-1234567"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                            className="w-full bg-white border border-[#eadeca] rounded-xl pr-10 pl-4 py-3 focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  <div>
+                    <label className="block mb-1.5 font-bold">כתובת אימייל:</label>
+                    <div className="relative">
+                      <Mail className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8b5a2b]" />
+                      <input
+                        type="email"
+                        placeholder="name@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full bg-white border border-[#eadeca] rounded-xl pr-10 pl-4 py-3 focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block mb-1.5 font-bold">סיסמה:</label>
+                    <div className="relative">
+                      <Lock className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8b5a2b]" />
+                      <input
+                        type="password"
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full bg-white border border-[#eadeca] rounded-xl pr-10 pl-4 py-3 focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* הודעות שגיאה או הצלחה */}
+                  {authError && (
+                    <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[10px] flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                      <span>{authError}</span>
+                    </div>
+                  )}
+
+                  {authSuccess && (
+                    <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] flex items-start gap-2">
+                      <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                      <span>{authSuccess}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl gold-button font-bold hover:opacity-95 active:scale-95 transition-all text-sm cursor-pointer disabled:opacity-50"
+                  >
+                    <span>{authLoading ? "מעבד..." : authMode === "login" ? "התחבר לממשק בית הדין" : "הרשם והתחבר"}</span>
+                    <ArrowRight className="h-5 w-5" />
+                  </button>
+                </form>
+              </>
             )}
+
           </div>
 
         </div>

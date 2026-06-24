@@ -7,9 +7,7 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 // הגדרה האם הפרויקט פועל במצב סימולציה מקומי (Mock Mode)
 // מוגדר על בסיס NEXT_PUBLIC_APP_MODE === 'development' כדי שבזמן ריצת build לפרודקשן
 // ה-Bundler ידע לבצע Tree shaking מלא לקוד ה-Mock
-export const isMockMode = 
-  process.env.NEXT_PUBLIC_APP_MODE === 'development' && 
-  (!supabaseUrl || !supabaseAnonKey);
+export const isMockMode = !supabaseUrl || !supabaseAnonKey;
 
 if (isMockMode && typeof window !== 'undefined') {
   console.warn(

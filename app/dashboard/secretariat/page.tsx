@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { dbService } from "./../../../lib/services/dbService";
 import { Panel, Case, Hearing, Document, ClientRequest, UserProfile, PartyRole } from "../../../types";
-import { isMockMode } from "./../../../lib/supabase/client";
+import { isMockMode, supabase } from "./../../../lib/supabase/client";
 
 export default function SecretariatDashboard() {
   const router = useRouter();
@@ -388,8 +388,11 @@ export default function SecretariatDashboard() {
               <Settings className="h-4 w-4" />
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 localStorage.clear();
+                if (!isMockMode && supabase) {
+                  await supabase.auth.signOut();
+                }
                 router.push("/");
               }}
               className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-[#faf6ee] border border-[#eadeca] text-[#5c4a3c] hover:bg-[#f3eedf] transition-all cursor-pointer"
