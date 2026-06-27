@@ -5,8 +5,6 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 // הגדרה האם הפרויקט פועל במצב סימולציה מקומי (Mock Mode)
-// מוגדר על בסיס NEXT_PUBLIC_APP_MODE === 'development' כדי שבזמן ריצת build לפרודקשן
-// ה-Bundler ידע לבצע Tree shaking מלא לקוד ה-Mock
 export const isMockMode = !supabaseUrl || !supabaseAnonKey;
 
 if (isMockMode && typeof window !== 'undefined') {
@@ -15,7 +13,14 @@ if (isMockMode && typeof window !== 'undefined') {
   );
 }
 
-// יצירת הלקוח של Supabase רק אם אנו לא במצב סימולציה
+// יצירת הלקוח של Supabase עם implicit flow כדי שה-access token יגיע ישירות ב-URL hash
 export const supabase = !isMockMode && supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey) 
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        flowType: 'implicit',
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+      }
+    })
   : null as any;
