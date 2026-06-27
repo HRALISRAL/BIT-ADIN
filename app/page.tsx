@@ -49,6 +49,18 @@ export default function Home() {
     loadProfiles();
   }, []);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const errorParam = urlParams.get("error");
+      if (errorParam) {
+        setAuthError(decodeURIComponent(errorParam));
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    }
+  }, []);
+
   const handleMockLogin = () => {
     const profile = profiles.find(p => p.id === selectedProfile);
     if (!profile) return;
