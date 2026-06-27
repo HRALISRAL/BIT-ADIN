@@ -81,12 +81,34 @@ function ClientDashboardContent() {
   };
 
   useEffect(() => {
-    const uid = userIdQuery || (typeof window !== "undefined" ? localStorage.getItem("current_user_id") : "");
-    if (!uid) {
-      router.push("/");
-      return;
+    async function initClientSession() {
+      let uid = userIdQuery;
+      
+      if (!uid && typeof window !== "undefined") {
+        uid = localStorage.getItem("current_user_id");
+      }
+      
+      if (!uid && !isMockMode && supabase) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            uid = user.id;
+            localStorage.setItem("current_user_id", user.id);
+          }
+        } catch (err) {
+          console.error("Failed to fetch user session:", err);
+        }
+      }
+      
+      if (!uid) {
+        router.push("/");
+        return;
+      }
+      
+      loadClientData(uid);
     }
-    loadClientData(uid);
+    
+    initClientSession();
   }, [userIdQuery]);
 
   const handleSelectHearing = async (hearing: Hearing, currentCases: Case[], uid: string) => {

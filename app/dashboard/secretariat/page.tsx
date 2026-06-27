@@ -108,14 +108,39 @@ export default function SecretariatDashboard() {
   };
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const role = localStorage.getItem("current_user_role");
-      if (role !== "secretariat") {
-        router.push("/");
-        return;
+    async function verifySession() {
+      if (isMockMode || !supabase) {
+        const role = localStorage.getItem("current_user_role");
+        if (role !== "secretariat") {
+          router.push("/");
+          return;
+        }
+        loadData();
+      } else {
+        try {
+          const { data: { user }, error } = await supabase.auth.getUser();
+          if (error || !user) {
+            console.error("No active auth user found in secretariat dashboard:", error);
+            router.push("/");
+            return;
+          }
+          const profile = await dbService.getProfile(user.id);
+          if (!profile || profile.system_role !== "secretariat") {
+            console.error("User does not have secretariat role:", profile);
+            router.push("/");
+            return;
+          }
+          // סנכרון ל-localStorage לטובת שאר חלקי הקליינט
+          localStorage.setItem("current_user_id", user.id);
+          localStorage.setItem("current_user_role", profile.system_role);
+          loadData();
+        } catch (err) {
+          console.error("Session verification failed:", err);
+          router.push("/");
+        }
       }
     }
-    loadData();
+    verifySession();
   }, []);
 
   // משיכת מספר סידורי אוטומטי בעת פתיחת מודל יצירת תיק
