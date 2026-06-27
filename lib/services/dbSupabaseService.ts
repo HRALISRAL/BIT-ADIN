@@ -81,7 +81,7 @@ export const dbSupabaseService = {
     // 1. יצירה או עדכון של פרופיל התובע
     let plaintiffId: string | null = null;
     if (plaintiff && plaintiff.email) {
-      const { data: pExisting } = await supabase.from('profiles').select('id').eq('email', plaintiff.email).maybeSingle();
+      const { data: pExisting } = await supabase.from('profiles').select('id').ilike('email', plaintiff.email).maybeSingle();
       if (pExisting) {
         plaintiffId = pExisting.id;
         await supabase.from('profiles').update({ full_name: plaintiff.full_name, phone: plaintiff.phone, address: plaintiff.address }).eq('id', plaintiffId);
@@ -90,7 +90,7 @@ export const dbSupabaseService = {
         const { data: pNew, error: pErr } = await supabase.from('profiles').insert({
           id: pUUID,
           full_name: plaintiff.full_name,
-          email: plaintiff.email,
+          email: plaintiff.email.toLowerCase(),
           phone: plaintiff.phone,
           address: plaintiff.address,
           system_role: 'litigant'
@@ -103,7 +103,7 @@ export const dbSupabaseService = {
     // 2. יצירה או עדכון של פרופיל הנתבע
     let defendantId: string | null = null;
     if (defendant && defendant.email) {
-      const { data: dExisting } = await supabase.from('profiles').select('id').eq('email', defendant.email).maybeSingle();
+      const { data: dExisting } = await supabase.from('profiles').select('id').ilike('email', defendant.email).maybeSingle();
       if (dExisting) {
         defendantId = dExisting.id;
         await supabase.from('profiles').update({ full_name: defendant.full_name, phone: defendant.phone, address: defendant.address }).eq('id', defendantId);
@@ -112,7 +112,7 @@ export const dbSupabaseService = {
         const { data: dNew, error: dErr } = await supabase.from('profiles').insert({
           id: dUUID,
           full_name: defendant.full_name,
-          email: defendant.email,
+          email: defendant.email.toLowerCase(),
           phone: defendant.phone,
           address: defendant.address,
           system_role: 'litigant'
@@ -432,7 +432,7 @@ export const dbSupabaseService = {
     const { data: existing } = await supabase
       .from('profiles')
       .select('id')
-      .eq('email', profile.email)
+      .ilike('email', profile.email)
       .maybeSingle();
 
     if (existing) {
@@ -450,7 +450,7 @@ export const dbSupabaseService = {
       .insert({
         id: genUUID(),
         full_name: profile.full_name,
-        email: profile.email,
+        email: profile.email.toLowerCase(),
         phone: profile.phone || '',
         address: profile.address || '',
         system_role: 'litigant'

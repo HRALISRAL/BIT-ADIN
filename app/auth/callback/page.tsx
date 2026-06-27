@@ -89,7 +89,7 @@ export default function AuthCallbackPage() {
         const { data: byEmail } = await supabase
           .from("profiles")
           .select("id, system_role")
-          .eq("email", session.user.email)
+          .ilike("email", session.user.email)
           .single();
 
         if (!byEmail) {
@@ -107,7 +107,7 @@ export default function AuthCallbackPage() {
         await supabase
           .from("profiles")
           .update({ id: session.user.id })
-          .eq("email", session.user.email);
+          .ilike("email", session.user.email);
 
         localStorage.setItem("current_user_role", byEmail.system_role);
         setStatus("מועבר לממשק...");

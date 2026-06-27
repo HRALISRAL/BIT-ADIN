@@ -309,15 +309,15 @@ BEGIN
             'secretariat'::system_role_type
         );
     ELSE
-        -- בדיקה האם המייל כבר רשום מראש על ידי המזכירות
-        IF EXISTS (SELECT 1 FROM public.profiles WHERE email = NEW.email) THEN
+        -- בדיקה האם המייל כבר רשום מראש על ידי המזכירות (לא רגיש לאותיות רישיות)
+        IF EXISTS (SELECT 1 FROM public.profiles WHERE LOWER(email) = LOWER(NEW.email)) THEN
             -- עדכון מזהה ה-UUID של הפרופיל הקיים למזהה החדש של auth.users
             -- בזכות ON UPDATE CASCADE, מזהה זה יעודכן אוטומטית בכל הטבלאות המקושרות!
             UPDATE public.profiles 
             SET id = NEW.id,
                 full_name = COALESCE(NEW.raw_user_meta_data->>'full_name', full_name),
                 phone = COALESCE(NEW.raw_user_meta_data->>'phone', phone)
-            WHERE email = NEW.email;
+            WHERE LOWER(email) = LOWER(NEW.email);
         ELSE
             -- חסימת הרשמה למי שלא רשום מראש
             RAISE EXCEPTION 'הרישום חסום: כתובת המייל אינה רשומה במערכת על ידי המזכירות.';
