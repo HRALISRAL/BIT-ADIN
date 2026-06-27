@@ -384,3 +384,32 @@ CREATE OR REPLACE TRIGGER audit_documents_trigger
 CREATE OR REPLACE TRIGGER audit_requests_trigger
     AFTER INSERT OR UPDATE OR DELETE ON public.requests
     FOR EACH ROW EXECUTE FUNCTION public.process_audit_log();
+
+-- =========================================================================
+-- 9. טבלת הודעות ועדכונים אישיים (Direct Messages)
+-- =========================================================================
+CREATE TABLE public.messages (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    sender_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    recipient_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    case_id UUID REFERENCES public.cases(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+
+-- פוליסות RLS עבור הודעות
+CREATE POLICY "Users can view messages they sent or received" 
+ON public.messages FOR SELECT TO authenticated 
+USING (auth.uid() = recipient_id OR auth.uid() = sender_id);
+
+CREATE POLICY "Users can insert messages they send" 
+ON public.messages FOR INSERT TO authenticated 
+WITH CHECK (auth.uid() = sender_id);
+
+-- החלת טריגר התיעוד על הודעות
+CREATE OR REPLACE TRIGGER audit_messages_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON public.messages
+    FOR EACH ROW EXECUTE FUNCTION public.process_audit_log();

@@ -11,7 +11,9 @@ import {
   createPanelAction,
   updatePanelAction,
   submitClientRequestAction,
-  createProfileAction
+  createProfileAction,
+  sendMessageAction,
+  uploadCaseDocumentAction
 } from '../../app/actions';
 import { 
   UserProfile, 
@@ -20,7 +22,8 @@ import {
   Hearing, 
   Document, 
   ClientRequest,
-  DocumentType
+  DocumentType,
+  DirectMessage
 } from '../../types';
 
 export const dbService = {
@@ -183,5 +186,26 @@ export const dbService = {
       phone: profile.phone || '',
       address: profile.address || ''
     });
+  },
+
+  async getMessages(userId: string): Promise<DirectMessage[]> {
+    if (isMockMode || !supabase) {
+      return dbMockService.getMessages(userId);
+    }
+    return dbSupabaseService.getMessages(supabase, userId);
+  },
+
+  async sendMessage(senderId: string, recipientId: string, title: string, content: string, caseId?: string): Promise<DirectMessage> {
+    if (isMockMode || !supabase) {
+      return dbMockService.sendMessage(senderId, recipientId, title, content, caseId);
+    }
+    return sendMessageAction({ senderId, recipientId, title, content, caseId });
+  },
+
+  async uploadCaseDocument(caseId: string, userId: string, documentType: DocumentType, fileName: string, filePath: string): Promise<Document> {
+    if (isMockMode || !supabase) {
+      return dbMockService.uploadCaseDocument(caseId, userId, documentType, fileName, filePath);
+    }
+    return uploadCaseDocumentAction({ caseId, userId, documentType, fileName, filePath });
   }
 };

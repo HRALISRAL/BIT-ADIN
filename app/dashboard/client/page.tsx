@@ -6,10 +6,10 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { 
   Scale, Calendar, FileText, Upload, Plus, AlertCircle, 
-  CheckCircle2, Clock, ShieldCheck, ArrowLeft, Send, Download, HelpCircle
+  CheckCircle2, Clock, ShieldCheck, ArrowLeft, Send, Download, HelpCircle, Mail
 } from "lucide-react";
 import { dbService } from "./../../../lib/services/dbService";
-import { UserProfile, Case, Hearing, Document, ClientRequest, DocumentType } from "../../../types";
+import { UserProfile, Case, Hearing, Document, ClientRequest, DocumentType, DirectMessage } from "../../../types";
 import { isMockMode, supabase } from "./../../../lib/supabase/client";
 
 function ClientDashboardContent() {
@@ -22,7 +22,8 @@ function ClientDashboardContent() {
   const [cases, setCases] = useState<Case[]>([]);
   const [hearings, setHearings] = useState<Hearing[]>([]);
   const [myRequests, setMyRequests] = useState<ClientRequest[]>([]);
-  
+  const [myMessages, setMyMessages] = useState<DirectMessage[]>([]);
+
   // דיון פעיל נבחר לצפייה במסמכים
   const [activeHearing, setActiveHearing] = useState<Hearing | null>(null);
   const [activeHearingDocs, setActiveHearingDocs] = useState<Document[]>([]);
@@ -44,6 +45,10 @@ function ClientDashboardContent() {
   const [reqError, setReqError] = useState("");
   const [reqSuccess, setReqSuccess] = useState("");
 
+  // מודל צפייה בהודעה
+  const [showMsgModal, setShowMsgModal] = useState(false);
+  const [selectedMsg, setSelectedMsg] = useState<DirectMessage | null>(null);
+
   const loadClientData = async (uid: string) => {
     try {
       setLoading(true);
@@ -55,10 +60,11 @@ function ClientDashboardContent() {
       }
       setCurrentUser(profile);
 
-      const [allCases, userHearings, allRequests] = await Promise.all([
+      const [allCases, userHearings, allRequests, userMessages] = await Promise.all([
         dbService.getCases(),
         dbService.getHearings(uid),
-        dbService.getClientRequests()
+        dbService.getClientRequests(),
+        dbService.getMessages(uid)
       ]);
 
       const myAssociatedCases = allCases.filter(c => 
@@ -69,6 +75,7 @@ function ClientDashboardContent() {
 
       const userRequests = allRequests.filter(r => r.user_id === uid);
       setMyRequests(userRequests);
+      setMyMessages(userMessages);
 
       if (userHearings.length > 0) {
         handleSelectHearing(userHearings[0], myAssociatedCases, uid);
@@ -265,7 +272,7 @@ function ClientDashboardContent() {
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
           
           {/* א. הדיון הקרוב שלי */}
-          <div className="lg:col-span-2 parchment-panel p-6 border-[#eadeca] flex flex-col justify-between torah-card">
+          <div className="parchment-panel p-6 border-[#eadeca] flex flex-col justify-between torah-card">
             <div>
               <span className="px-3 py-1 rounded-full bg-[#8b5a2b]/10 text-[#8b5a2b] font-bold text-[10px] uppercase tracking-wider">
                 הדיון הקרוב ביותר ביומן
@@ -274,7 +281,7 @@ function ClientDashboardContent() {
               {nextHearing ? (
                 <div className="mt-4 space-y-4">
                   <div>
-                    <h2 className="text-2xl font-black text-serif text-[#2d1e10]">{nextHearing.case_title}</h2>
+                    <h2 className="text-xl font-black text-serif text-[#2d1e10] truncate" title={nextHearing.case_title}>{nextHearing.case_title}</h2>
                     <div className="flex items-center gap-2 mt-1.5">
                       <span className="text-xs text-[#5c4a3c] font-bold">תיק:</span>
                       <span className="bg-[#8b5a2b]/5 px-2.5 py-1 text-xs font-black tracking-wider text-amber-800 border border-[#eadfcd] rounded-lg shadow-sm">
@@ -283,20 +290,20 @@ function ClientDashboardContent() {
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-3 gap-4 p-4 rounded-xl bg-[#faf6ee]/50 border border-[#eadeca] text-xs font-semibold">
+                  <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-[#faf6ee]/50 border border-[#eadeca] text-[10px] font-bold">
                     <div>
                       <span className="text-[#5c4a3c] block">תאריך דיון</span>
-                      <strong className="text-[#2d1e10] text-sm block mt-1">
-                        {new Date(nextHearing.hearing_date).toLocaleDateString('he-IL', { weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric' })}
+                      <strong className="text-[#2d1e10] block mt-0.5">
+                        {new Date(nextHearing.hearing_date).toLocaleDateString('he-IL', { weekday: 'short', month: 'numeric', day: 'numeric' })}
                       </strong>
                     </div>
                     <div>
                       <span className="text-[#5c4a3c] block">שעת התחלה</span>
-                      <strong className="text-[#2d1e10] text-sm block mt-1">{nextHearing.hearing_time}</strong>
+                      <strong className="text-[#2d1e10] block mt-0.5">{nextHearing.hearing_time}</strong>
                     </div>
                     <div>
                       <span className="text-[#5c4a3c] block">הרכב דיינים</span>
-                      <strong className="text-[#2d1e10] text-sm block mt-1 truncate" title={nextHearing.panel_name}>
+                      <strong className="text-[#2d1e10] block mt-0.5 truncate" title={nextHearing.panel_name}>
                         {nextHearing.panel_name?.split(" ")[0]} {nextHearing.panel_name?.split(" ")[1]}
                       </strong>
                     </div>
@@ -311,9 +318,9 @@ function ClientDashboardContent() {
             </div>
 
             {nextHearing && (
-              <div className="mt-6 pt-4 border-t border-[#eadeca] flex items-center gap-2 text-[11px] text-[#5c4a3c] font-bold">
-                <ShieldCheck className="h-4 w-4 text-emerald-700" />
-                <span>נא להגיע לאולם בית הדין כ-15 דקות לפני שעת הדיון המצוינת.</span>
+              <div className="mt-6 pt-4 border-t border-[#eadeca] flex items-center gap-2 text-[10px] text-[#5c4a3c] font-bold">
+                <ShieldCheck className="h-4 w-4 text-emerald-700 flex-shrink-0" />
+                <span>נא להגיע לאולם כ-15 דקות לפני הזמן.</span>
               </div>
             )}
           </div>
@@ -362,6 +369,48 @@ function ClientDashboardContent() {
               <Plus className="h-4 w-4" />
               <span>הגש בקשה/פנייה חדשה</span>
             </button>
+          </div>
+
+          {/* ג. הודעות מהמזכירות */}
+          <div className="parchment-panel p-6 border-[#eadeca] flex flex-col justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-serif text-[#2d1e10] flex items-center gap-2">
+                <Mail className="h-5 w-5 text-[#8b5a2b]" />
+                <span>הודעות ועדכונים מהמזכירות</span>
+              </h3>
+              <p className="text-xs text-[#5c4a3c] font-medium mt-1">הודעות אישיות שנשלחו אליך מבית הדין.</p>
+              
+              <div className="mt-4 space-y-2 max-h-[140px] overflow-y-auto pr-1">
+                {myMessages.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic py-2 font-normal">אין הודעות חדשות עבורך.</p>
+                ) : (
+                  myMessages.map(m => (
+                    <div 
+                      key={m.id} 
+                      onClick={() => {
+                        setSelectedMsg(m);
+                        setShowMsgModal(true);
+                      }}
+                      className="p-2.5 rounded-lg bg-white border border-[#eadeca] hover:border-[#cda851] transition-all flex items-center justify-between text-[11px] font-medium cursor-pointer"
+                    >
+                      <div className="truncate pl-2">
+                        <strong className="text-[#2d1e10] block truncate font-bold text-serif" title={m.title}>{m.title}</strong>
+                        <span className="text-[10px] text-[#5c4a3c] block mt-0.5">
+                          {m.case_number ? `תיק ${m.case_number}` : 'הודעה כללית'}
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-[#8b5a2b] font-bold flex-shrink-0">
+                        {new Date(m.created_at).toLocaleDateString('he-IL')}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-[#eadeca] text-[10px] text-slate-450 font-normal">
+              סה"כ הודעות במערכת: {myMessages.length}
+            </div>
           </div>
 
         </section>
@@ -743,6 +792,71 @@ function ClientDashboardContent() {
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* מודל צפייה בהודעה אישית */}
+      {showMsgModal && selectedMsg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/40 backdrop-blur-sm">
+          <div className="parchment-panel w-full max-w-md p-6 border-[#eadeca] shadow-2xl animate-in fade-in zoom-in duration-200 torah-card">
+            
+            <div className="flex items-center justify-between border-b border-[#eadeca] pb-3 mb-5">
+              <h3 className="text-lg font-bold text-serif text-[#2d1e10] flex items-center gap-2">
+                <Mail className="h-5 w-5 text-[#8b5a2b]" />
+                <span>הודעה מ{selectedMsg.sender_name || 'מזכירות בית הדין'}</span>
+              </h3>
+              <button
+                onClick={() => {
+                  setShowMsgModal(false);
+                  setSelectedMsg(null);
+                }}
+                className="text-[#5c4a3c] hover:text-[#2d1e10] text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs font-semibold">
+              <div>
+                <span className="text-[#5c4a3c] block text-[10px]">נושא ההודעה:</span>
+                <strong className="text-[#2d1e10] text-sm block mt-0.5 text-serif">{selectedMsg.title}</strong>
+              </div>
+
+              {selectedMsg.case_number && (
+                <div>
+                  <span className="text-[#5c4a3c] block text-[10px]">שיוך לתיק:</span>
+                  <span className="bg-[#8b5a2b]/5 px-2 py-0.5 text-[11px] font-black tracking-wider text-amber-800 border border-[#eadfcd] rounded-lg shadow-sm inline-block mt-1">
+                    {selectedMsg.case_number}
+                  </span>
+                </div>
+              )}
+
+              <div>
+                <span className="text-[#5c4a3c] block text-[10px]">נשלח בתאריך:</span>
+                <span className="text-[#2d1e10] block mt-0.5">{new Date(selectedMsg.created_at).toLocaleDateString('he-IL')}</span>
+              </div>
+
+              <div>
+                <span className="text-[#5c4a3c] block text-[10px] mb-1">תוכן ההודעה:</span>
+                <div className="p-3 bg-[#faf6ee]/50 border border-[#eadeca] rounded-xl text-[#2d1e10] font-medium whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
+                  {selectedMsg.content}
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-[#eadeca] flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMsgModal(false);
+                    setSelectedMsg(null);
+                  }}
+                  className="px-5 py-2 rounded-xl gold-button font-bold cursor-pointer"
+                >
+                  סגור הודעה
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -9,7 +9,8 @@ import {
   DocumentType,
   HearingStatus,
   CaseStatus,
-  PartyRole
+  PartyRole,
+  DirectMessage
 } from '../../types';
 
 // =========================================================================
@@ -256,6 +257,31 @@ export const dbMockService = {
     };
     hearings.push(newHearing);
     setLocalData('hearings', hearings);
+
+    // שלח הודעה אוטומטית לכל המעורבים בתיק (Mock)
+    try {
+      const mockSenderId = (typeof window !== 'undefined' && localStorage.getItem("current_user_id")) || 'mock-secretariat-id';
+      const participants = getLocalData<any[]>('participants', INITIAL_PARTICIPANTS);
+      const cases = getLocalData<Case[]>('cases', INITIAL_CASES);
+      const caseObj = cases.find(c => c.id === caseId);
+      const caseNumStr = caseObj ? caseObj.case_number : '';
+      const caseParts = participants.filter(p => p.case_id === caseId);
+
+      for (const p of caseParts) {
+        if (p.user_id !== mockSenderId) {
+          await this.sendMessage(
+            mockSenderId,
+            p.user_id,
+            `נקבע מועד דיון חדש בתיק ${caseNumStr}`,
+            `שלום רב,\n\nהרינו לעדכן כי נקבע דיון בתיק מספר ${caseNumStr} מול הרכב הדיינים '${targetPanel.name}'.\nהדיון יתקיים ביום ובשעה המפורטים מטה:\n\nתאריך: ${dateStr}\nשעה: ${timeStr}.\n\nבברכה,\nמזכירות בית הדין.`,
+            caseId
+          );
+        }
+      }
+    } catch (msgErr) {
+      console.error('Failed to send automated hearing messages (Mock):', msgErr);
+    }
+
     return newHearing;
   },
 
@@ -316,6 +342,30 @@ export const dbMockService = {
     };
     allDocs.push(newDoc);
     setLocalData('documents', allDocs);
+    return newDoc;
+  },
+
+  async uploadCaseDocument(
+    caseId: string,
+    userId: string,
+    documentType: DocumentType,
+    fileName: string,
+    filePath: string
+  ): Promise<Document> {
+    const documents = getLocalData<Document[]>('documents', INITIAL_DOCUMENTS);
+    const newDoc: Document = {
+      id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      hearing_id: '',
+      case_id: caseId,
+      uploaded_by: userId,
+      file_path: filePath,
+      file_name: fileName,
+      document_type: documentType,
+      is_shared: true,
+      created_at: new Date().toISOString()
+    };
+    documents.push(newDoc);
+    setLocalData('documents', documents);
     return newDoc;
   },
 
@@ -438,5 +488,48 @@ export const dbMockService = {
     profiles.push(newProfile);
     setLocalData('profiles', profiles);
     return newProfile;
+  },
+
+  async getMessages(userId: string): Promise<DirectMessage[]> {
+    const messages = getLocalData<DirectMessage[]>('messages', []);
+    const profiles = getLocalData<UserProfile[]>('profiles', INITIAL_PROFILES);
+    const cases = getLocalData<Case[]>('cases', INITIAL_CASES);
+
+    return messages
+      .filter(m => m.sender_id === userId || m.recipient_id === userId)
+      .map(m => {
+        const sender = profiles.find(p => p.id === m.sender_id);
+        const recipient = profiles.find(p => p.id === m.recipient_id);
+        const c = cases.find(caseItem => caseItem.id === m.case_id);
+        return {
+          ...m,
+          sender_name: sender?.full_name || 'משתמש לא ידוע',
+          recipient_name: recipient?.full_name || 'משתמש לא ידוע',
+          case_number: c?.case_number
+        };
+      })
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  },
+
+  async sendMessage(
+    senderId: string,
+    recipientId: string,
+    title: string,
+    content: string,
+    caseId?: string
+  ): Promise<DirectMessage> {
+    const messages = getLocalData<DirectMessage[]>('messages', []);
+    const newMsg: DirectMessage = {
+      id: `msg-${Date.now()}`,
+      sender_id: senderId,
+      recipient_id: recipientId,
+      case_id: caseId,
+      title,
+      content,
+      created_at: new Date().toISOString()
+    };
+    messages.push(newMsg);
+    setLocalData('messages', messages);
+    return newMsg;
   }
 };

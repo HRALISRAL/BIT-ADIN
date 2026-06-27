@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { 
   Scale, Calendar, FileText, CheckCircle2, XCircle, Clock, 
   Plus, Eye, Share2, ToggleLeft, ToggleRight, ArrowLeft,
-  Users, Inbox, Download, Upload, AlertCircle, Search, Edit, FolderPlus, Settings
+  Users, Inbox, Download, Upload, AlertCircle, Search, Edit, FolderPlus, Settings, Mail
 } from "lucide-react";
 import { dbService } from "./../../../lib/services/dbService";
 import { Panel, Case, Hearing, Document, ClientRequest, UserProfile, PartyRole } from "../../../types";
@@ -36,6 +36,15 @@ export default function SecretariatDashboard() {
   const [clientError, setClientError] = useState("");
   const [clientSuccess, setClientSuccess] = useState("");
 
+  // מודל שליחת הודעה
+  const [showSendMessageModal, setShowSendMessageModal] = useState(false);
+  const [msgRecipient, setMsgRecipient] = useState<UserProfile | null>(null);
+  const [msgTitle, setMsgTitle] = useState("");
+  const [msgContent, setMsgContent] = useState("");
+  const [msgCaseId, setMsgCaseId] = useState("");
+  const [msgError, setMsgError] = useState("");
+  const [msgSuccess, setMsgSuccess] = useState("");
+
   // מצבי ממשק (Modals & State)
   const [loading, setLoading] = useState(true);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -61,6 +70,7 @@ export default function SecretariatDashboard() {
   const [newCaseDAddress, setNewCaseDAddress] = useState("");
   const [createCaseError, setCreateCaseError] = useState("");
   const [createCaseSuccess, setCreateCaseSuccess] = useState("");
+  const [newCaseFiles, setNewCaseFiles] = useState<File[]>([]);
 
   // מודל ניהול הרכבים
   const [showPanelModal, setShowPanelModal] = useState(false);
@@ -197,7 +207,7 @@ export default function SecretariatDashboard() {
     }
 
     try {
-      await dbService.createCase(
+      const createdCase = await dbService.createCase(
         newCaseNumber.trim(),
         newCaseTitle.trim(),
         newCasePanelId,
@@ -215,6 +225,36 @@ export default function SecretariatDashboard() {
         } : undefined
       );
 
+      // העלאת מסמכים ראשוניים לתיק במידה ונבחרו
+      if (newCaseFiles.length > 0) {
+        const uploaderId = localStorage.getItem("current_user_id") || "";
+        for (const file of newCaseFiles) {
+          let filePath = "";
+          if (isMockMode || !supabase) {
+            filePath = `/mock/secretariat_case_upload_${Date.now()}_${file.name}`;
+          } else {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+            const storagePath = `secretariat/${fileName}`;
+            
+            const { data: storageData, error: storageErr } = await supabase.storage
+              .from('court-documents')
+              .upload(storagePath, file);
+              
+            if (storageErr) throw storageErr;
+            filePath = storagePath;
+          }
+
+          await dbService.uploadCaseDocument(
+            createdCase.id,
+            uploaderId,
+            'secretariat',
+            file.name,
+            filePath
+          );
+        }
+      }
+
       setCreateCaseSuccess("התיק נפתח ונרשם במערכת בהצלחה!");
       setNewCaseTitle("");
       setNewCasePName("");
@@ -225,6 +265,7 @@ export default function SecretariatDashboard() {
       setNewCaseDEmail("");
       setNewCaseDPhone("");
       setNewCaseDAddress("");
+      setNewCaseFiles([]);
       await loadData();
 
       setTimeout(() => {
@@ -268,6 +309,47 @@ export default function SecretariatDashboard() {
       }, 1500);
     } catch (err: any) {
       setClientError(err.message || "שגיאה בהוספת הלקוח.");
+    }
+  };
+
+  const handleSendMessageSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMsgError("");
+    setMsgSuccess("");
+
+    if (!msgRecipient) return;
+    if (!msgTitle.trim() || !msgContent.trim()) {
+      setMsgError("נא למלא נושא ותוכן הודעה.");
+      return;
+    }
+
+    try {
+      const senderId = localStorage.getItem("current_user_id") || "";
+      if (!senderId) {
+        setMsgError("לא נמצא מזהה שולח (המזכירות). התחבר מחדש.");
+        return;
+      }
+
+      await dbService.sendMessage(
+        senderId,
+        msgRecipient.id,
+        msgTitle.trim(),
+        msgContent.trim(),
+        msgCaseId ? msgCaseId : undefined
+      );
+
+      setMsgSuccess("ההודעה נשלחה בהצלחה!");
+      setMsgTitle("");
+      setMsgContent("");
+      setMsgCaseId("");
+
+      setTimeout(() => {
+        setShowSendMessageModal(false);
+        setMsgRecipient(null);
+        setMsgSuccess("");
+      }, 1500);
+    } catch (err: any) {
+      setMsgError(err.message || "שגיאה בשליחת ההודעה.");
     }
   };
 
@@ -941,12 +1023,13 @@ export default function SecretariatDashboard() {
                     <th className="p-4">טלפון</th>
                     <th className="p-4">כתובת מגורים</th>
                     <th className="p-4">מזהה מערכת (UUID)</th>
+                    <th className="p-4 text-center">פעולות</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#faf6ee]">
                   {litigants.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-400">
+                      <td colSpan={6} className="p-8 text-center text-slate-400">
                         אין לקוחות רשומים במערכת.
                       </td>
                     </tr>
@@ -958,6 +1041,18 @@ export default function SecretariatDashboard() {
                         <td className="p-4 text-[#5c4a3c]">{l.phone || '—'}</td>
                         <td className="p-4 text-[#5c4a3c]">{l.address || '—'}</td>
                         <td className="p-4 text-[10px] font-mono text-slate-400 select-all">{l.id}</td>
+                        <td className="p-4 text-center">
+                          <button
+                            onClick={() => {
+                              setMsgRecipient(l);
+                              setShowSendMessageModal(true);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-[#faf6ee] border border-[#eadeca] hover:bg-[#f3eedf] text-[#8b5a2b] font-bold transition-all flex items-center gap-1 cursor-pointer mx-auto"
+                          >
+                            <Mail className="h-3 w-3" />
+                            <span>שלח הודעה</span>
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -1220,7 +1315,27 @@ export default function SecretariatDashboard() {
                       className="w-full bg-white border border-[#eadeca] rounded-lg px-2.5 py-1.5 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium text-xs"
                     />
                   </div>
-                </div>
+              </div>
+            </div>
+
+            {/* העלאת מסמכים ראשוניים לתיק */}
+              <div className="border-t border-[#eadeca] pt-4">
+                <label className="block text-[#2d1e10] mb-1">העלאת מסמכים ראשוניים לתיק (אופציונלי):</label>
+                <input
+                  type="file"
+                  multiple
+                  onChange={(e) => {
+                    if (e.target.files) {
+                      setNewCaseFiles(Array.from(e.target.files));
+                    }
+                  }}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium"
+                />
+                {newCaseFiles.length > 0 && (
+                  <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                    נבחרו {newCaseFiles.length} קבצים: {newCaseFiles.map(f => f.name).join(", ")}
+                  </p>
+                )}
               </div>
 
               {/* שגיאות או הצלחה */}
@@ -1809,6 +1924,105 @@ export default function SecretariatDashboard() {
                   className="px-5 py-2 rounded-xl gold-button font-bold cursor-pointer"
                 >
                   הוסף לקוח
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* מודל שליחת הודעה אישית */}
+      {showSendMessageModal && msgRecipient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/40 backdrop-blur-sm">
+          <div className="parchment-panel w-full max-w-md p-6 border-[#eadeca] shadow-2xl animate-in fade-in zoom-in duration-200 torah-card">
+            
+            <div className="flex items-center justify-between border-b border-[#eadeca] pb-3 mb-5">
+              <h3 className="text-lg font-bold text-serif text-[#2d1e10] flex items-center gap-2">
+                <Mail className="h-5 w-5 text-[#8b5a2b]" />
+                <span>שליחת הודעה אישית ל{msgRecipient.full_name}</span>
+              </h3>
+              <button
+                onClick={() => {
+                  setShowSendMessageModal(false);
+                  setMsgRecipient(null);
+                }}
+                className="text-[#5c4a3c] hover:text-[#2d1e10] text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSendMessageSubmit} className="space-y-4 text-xs font-semibold">
+              <div>
+                <label className="block text-[#2d1e10] mb-1">נושא ההודעה *:</label>
+                <input
+                  type="text"
+                  placeholder="לדוגמה: זימון דחוף או עדכון החלטה"
+                  value={msgTitle}
+                  onChange={(e) => setMsgTitle(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#2d1e10] mb-1">שיוך לתיק (אופציונלי):</label>
+                <select
+                  value={msgCaseId}
+                  onChange={(e) => setMsgCaseId(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium"
+                >
+                  <option value="">ללא שיוך לתיק ספציפי</option>
+                  {cases.map(c => (
+                    <option key={c.id} value={c.id}>
+                      תיק מספר {c.case_number} - {c.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[#2d1e10] mb-1">תוכן ההודעה *:</label>
+                <textarea
+                  placeholder="כתוב את תוכן ההודעה כאן..."
+                  value={msgContent}
+                  onChange={(e) => setMsgContent(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-3 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium h-32 resize-none"
+                  required
+                />
+              </div>
+
+              {/* שגיאות או הצלחה */}
+              {msgError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>{msgError}</span>
+                </div>
+              )}
+
+              {msgSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                  <span>{msgSuccess}</span>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-[#eadeca] flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSendMessageModal(false);
+                    setMsgRecipient(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#faf6ee] border border-[#eadeca] text-[#5c4a3c] hover:bg-[#f3eedf] cursor-pointer"
+                >
+                  ביטול
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl gold-button font-bold cursor-pointer"
+                >
+                  שלח הודעה
                 </button>
               </div>
             </form>

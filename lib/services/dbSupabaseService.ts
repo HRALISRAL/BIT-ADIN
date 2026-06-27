@@ -8,7 +8,8 @@ import {
   Document, 
   ClientRequest,
   DocumentType,
-  PartyRole
+  PartyRole,
+  DirectMessage
 } from '../../types';
 
 export const dbSupabaseService = {
@@ -198,6 +199,42 @@ export const dbSupabaseService = {
       .select()
       .single();
     if (error) throw error;
+
+    // שלח הודעה אוטומטית לכל המעורבים בתיק
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const senderId = user ? user.id : '00000000-0000-0000-0000-000000000000';
+      
+      const { data: participants } = await supabase
+        .from('case_participants')
+        .select('user_id')
+        .eq('case_id', caseId);
+
+      if (participants && participants.length > 0) {
+        const { data: caseObj } = await supabase
+          .from('cases')
+          .select('case_number')
+          .eq('id', caseId)
+          .single();
+
+        const caseNumStr = caseObj ? caseObj.case_number : '';
+
+        for (const p of participants) {
+          if (p.user_id !== senderId) {
+            await supabase.from('messages').insert({
+              sender_id: senderId,
+              recipient_id: p.user_id,
+              case_id: caseId,
+              title: `נקבע מועד דיון חדש בתיק ${caseNumStr}`,
+              content: `שלום רב,\n\nהרינו לעדכן כי נקבע דיון בתיק מספר ${caseNumStr} מול הרכב הדיינים '${targetPanel.name}'.\nהדיון יתקיים ביום ובשעה המפורטים מטה:\n\nתאריך: ${dateStr}\nשעה: ${timeStr}.\n\nבברכה,\nמזכירות בית הדין.`
+            });
+          }
+        }
+      }
+    } catch (msgErr) {
+      console.error('Failed to send automated hearing messages:', msgErr);
+    }
+
     return data;
   },
 
@@ -257,6 +294,32 @@ export const dbSupabaseService = {
       })
       .select()
       .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async uploadCaseDocument(
+    supabase: SupabaseClient,
+    caseId: string,
+    userId: string,
+    documentType: DocumentType,
+    fileName: string,
+    filePath: string
+  ): Promise<Document> {
+    const { data, error } = await supabase
+      .from('documents')
+      .insert({
+        hearing_id: null,
+        case_id: caseId,
+        uploaded_by: userId,
+        file_path: filePath,
+        file_name: fileName,
+        document_type: documentType,
+        is_shared: true
+      })
+      .select()
+      .single();
+
     if (error) throw error;
     return data;
   },
@@ -397,5 +460,57 @@ export const dbSupabaseService = {
 
     if (error) throw error;
     return newProfile;
+  },
+
+  async getMessages(supabase: SupabaseClient, userId: string): Promise<DirectMessage[]> {
+    const { data, error } = await supabase
+      .from('messages')
+      .select(`
+        *,
+        sender:profiles!sender_id(full_name),
+        recipient:profiles!recipient_id(full_name),
+        cases(case_number)
+      `)
+      .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return (data || []).map((m: any) => ({
+      id: m.id,
+      sender_id: m.sender_id,
+      recipient_id: m.recipient_id,
+      case_id: m.case_id,
+      title: m.title,
+      content: m.content,
+      created_at: m.created_at,
+      sender_name: m.sender?.full_name || 'משתמש לא ידוע',
+      recipient_name: m.recipient?.full_name || 'משתמש לא ידוע',
+      case_number: m.cases?.case_number
+    }));
+  },
+
+  async sendMessage(
+    supabase: SupabaseClient,
+    senderId: string,
+    recipientId: string,
+    title: string,
+    content: string,
+    caseId?: string
+  ): Promise<DirectMessage> {
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        sender_id: senderId,
+        recipient_id: recipientId,
+        case_id: caseId || null,
+        title,
+        content
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
   }
 };

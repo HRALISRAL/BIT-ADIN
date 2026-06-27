@@ -97,3 +97,18 @@ export interface ClientRequest {
   user_name?: string;
   case_number?: string;
 }
+
+export interface DirectMessage {
+  id: string;
+  sender_id: string;
+  recipient_id: string;
+  case_id?: string;
+  title: string;
+  content: string;
+  created_at: string;
+  
+  // שדות תצוגה מורחבים
+  sender_name?: string;
+  recipient_name?: string;
+  case_number?: string;
+}

@@ -137,6 +137,31 @@ export async function uploadDocumentAction(data: z.infer<typeof uploadDocumentSc
   );
 }
 
+const uploadCaseDocumentSchema = z.object({
+  caseId: z.string().uuid(),
+  userId: z.string().uuid(),
+  documentType: z.enum(['plaintiff', 'defendant', 'secretariat']),
+  fileName: z.string(),
+  filePath: z.string()
+});
+
+export async function uploadCaseDocumentAction(data: z.infer<typeof uploadCaseDocumentSchema>) {
+  const validated = uploadCaseDocumentSchema.parse(data);
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  return await dbSupabaseService.uploadCaseDocument(
+    supabase,
+    validated.caseId,
+    validated.userId,
+    validated.documentType as DocumentType,
+    validated.fileName,
+    validated.filePath
+  );
+}
+
 export async function updateRequestStatusAction(data: z.infer<typeof updateRequestStatusSchema>) {
   const validated = updateRequestStatusSchema.parse(data);
   const supabase = await createClient();
@@ -213,4 +238,29 @@ export async function createProfileAction(data: z.infer<typeof createProfileSche
   if (!user) throw new Error("Unauthorized");
 
   return await dbSupabaseService.createProfile(supabase, validated);
+}
+
+const sendMessageSchema = z.object({
+  senderId: z.string().uuid("שולח לא תקין"),
+  recipientId: z.string().uuid("מקבל לא תקין"),
+  title: z.string().min(1, "נושא הודעה הוא שדה חובה"),
+  content: z.string().min(1, "תוכן הודעה הוא שדה חובה"),
+  caseId: z.string().uuid().optional()
+});
+
+export async function sendMessageAction(data: z.infer<typeof sendMessageSchema>) {
+  const validated = sendMessageSchema.parse(data);
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  return await dbSupabaseService.sendMessage(
+    supabase,
+    validated.senderId,
+    validated.recipientId,
+    validated.title,
+    validated.content,
+    validated.caseId
+  );
 }
