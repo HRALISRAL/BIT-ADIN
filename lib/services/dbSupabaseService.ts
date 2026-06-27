@@ -360,5 +360,42 @@ export const dbSupabaseService = {
     const nextNum = 1000 + countNum + 1;
     const year = new Date().getFullYear().toString().slice(-2);
     return `${nextNum}/${year}`;
+  },
+
+  async createProfile(
+    supabase: SupabaseClient,
+    profile: { full_name: string; email: string; phone?: string; address?: string }
+  ): Promise<UserProfile> {
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', profile.email)
+      .maybeSingle();
+
+    if (existing) {
+      throw new Error("משתמש עם כתובת מייל זו כבר קיים במערכת.");
+    }
+
+    const genUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+
+    const { data: newProfile, error } = await supabase
+      .from('profiles')
+      .insert({
+        id: genUUID(),
+        full_name: profile.full_name,
+        email: profile.email,
+        phone: profile.phone || '',
+        address: profile.address || '',
+        system_role: 'litigant'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return newProfile;
   }
 };

@@ -10,7 +10,8 @@ import {
   updateRequestStatusAction,
   createPanelAction,
   updatePanelAction,
-  submitClientRequestAction
+  submitClientRequestAction,
+  createProfileAction
 } from '../../app/actions';
 import { 
   UserProfile, 
@@ -170,5 +171,17 @@ export const dbService = {
 
   setBetDinName(name: string): void {
     dbMockService.setBetDinName(name);
+  },
+
+  async createProfile(profile: { full_name: string; email: string; phone?: string; address?: string }): Promise<UserProfile> {
+    if (isMockMode || !supabase) {
+      return dbMockService.createProfile(profile);
+    }
+    return createProfileAction({
+      full_name: profile.full_name,
+      email: profile.email,
+      phone: profile.phone || '',
+      address: profile.address || ''
+    });
   }
 };

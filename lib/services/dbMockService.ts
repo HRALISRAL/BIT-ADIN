@@ -417,5 +417,26 @@ export const dbMockService = {
     if (typeof window !== 'undefined') {
       localStorage.setItem('court_name', name);
     }
+  },
+
+  async createProfile(profile: { full_name: string; email: string; phone?: string; address?: string }): Promise<UserProfile> {
+    const profiles = getLocalData<UserProfile[]>('profiles', INITIAL_PROFILES);
+    const existing = profiles.find(p => p.email.toLowerCase() === profile.email.toLowerCase());
+    if (existing) {
+      throw new Error("משתמש עם כתובת מייל זו כבר קיים במערכת.");
+    }
+
+    const newProfile: UserProfile = {
+      id: `litigant-${Date.now()}`,
+      full_name: profile.full_name,
+      email: profile.email,
+      phone: profile.phone || '',
+      address: profile.address || '',
+      system_role: 'litigant',
+      created_at: new Date().toISOString()
+    };
+    profiles.push(newProfile);
+    setLocalData('profiles', profiles);
+    return newProfile;
   }
 };

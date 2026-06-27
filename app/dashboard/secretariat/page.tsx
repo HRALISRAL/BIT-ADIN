@@ -24,8 +24,17 @@ export default function SecretariatDashboard() {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [courtName, setCourtName] = useState("בית הדין הרבני האזורי ירושלים");
   
-  // לשונית פעילה (calendar | cases | panels | requests | settings)
-  const [activeTab, setActiveTab] = useState<"calendar" | "cases" | "panels" | "requests">("calendar");
+  // לשונית פעילה (calendar | cases | panels | requests | clients)
+  const [activeTab, setActiveTab] = useState<"calendar" | "cases" | "panels" | "requests" | "clients">("calendar");
+
+  // מודל הוספת לקוח
+  const [showCreateClientModal, setShowCreateClientModal] = useState(false);
+  const [clientFormName, setClientFormName] = useState("");
+  const [clientFormEmail, setClientFormEmail] = useState("");
+  const [clientFormPhone, setClientFormPhone] = useState("");
+  const [clientFormAddress, setClientFormAddress] = useState("");
+  const [clientError, setClientError] = useState("");
+  const [clientSuccess, setClientSuccess] = useState("");
 
   // מצבי ממשק (Modals & State)
   const [loading, setLoading] = useState(true);
@@ -224,6 +233,41 @@ export default function SecretariatDashboard() {
       }, 1500);
     } catch (err: any) {
       setCreateCaseError(err.message || "שגיאה בפתיחת התיק.");
+    }
+  };
+
+  const handleCreateClientSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setClientError("");
+    setClientSuccess("");
+
+    if (!clientFormName.trim() || !clientFormEmail.trim()) {
+      setClientError("נא למלא שם מלא וכתובת אימייל.");
+      return;
+    }
+
+    try {
+      await dbService.createProfile({
+        full_name: clientFormName.trim(),
+        email: clientFormEmail.trim(),
+        phone: clientFormPhone.trim(),
+        address: clientFormAddress.trim()
+      });
+
+      setClientSuccess("הלקוח נוסף למערכת בהצלחה!");
+      setClientFormName("");
+      setClientFormEmail("");
+      setClientFormPhone("");
+      setClientFormAddress("");
+      
+      await loadData();
+
+      setTimeout(() => {
+        setShowCreateClientModal(false);
+        setClientSuccess("");
+      }, 1500);
+    } catch (err: any) {
+      setClientError(err.message || "שגיאה בהוספת הלקוח.");
     }
   };
 
@@ -547,6 +591,17 @@ export default function SecretariatDashboard() {
               </span>
             )}
           </button>
+
+          <button
+            onClick={() => setActiveTab("clients")}
+            className={`py-3 px-4 border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeTab === "clients" 
+                ? "border-[#a27b18] text-[#a27b18]" 
+                : "border-transparent text-[#5c4a3c] hover:text-[#2d1e10]"
+            }`}
+          >
+            <span>ניהול לקוחות</span>
+          </button>
         </section>
 
         {/* תוכן הלשונית: 1) יומן ושיבוץ */}
@@ -851,6 +906,58 @@ export default function SecretariatDashboard() {
                             <span className="text-[10px] text-slate-400 font-normal">—</span>
                           )}
                         </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {/* תוכן הלשונית: 5) ניהול לקוחות */}
+        {activeTab === "clients" && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-serif text-[#2d1e10]">ניהול ורישום לקוחות (בעלי דין)</h2>
+                <p className="text-xs text-[#5c4a3c] font-medium">הוספת לקוחות חדשים למערכת וצפייה ברשומות קיימות</p>
+              </div>
+              <button
+                onClick={() => setShowCreateClientModal(true)}
+                className="px-4 py-2 rounded-xl gold-button text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                <span>הוספת לקוח חדש</span>
+              </button>
+            </div>
+
+            <div className="parchment-panel border border-[#eadeca] rounded-2xl overflow-hidden bg-white shadow-sm">
+              <table className="w-full text-right text-xs">
+                <thead>
+                  <tr className="bg-[#faf6ee] text-[#8b5a2b] font-bold border-b border-[#eadeca]">
+                    <th className="p-4">שם מלא</th>
+                    <th className="p-4">כתובת אימייל (לחיבור גוגל)</th>
+                    <th className="p-4">טלפון</th>
+                    <th className="p-4">כתובת מגורים</th>
+                    <th className="p-4">מזהה מערכת (UUID)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#faf6ee]">
+                  {litigants.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-slate-400">
+                        אין לקוחות רשומים במערכת.
+                      </td>
+                    </tr>
+                  ) : (
+                    litigants.map(l => (
+                      <tr key={l.id} className="hover:bg-[#faf6ee]/40 transition-all font-medium text-[#2d1e10]">
+                        <td className="p-4 font-bold text-[#8b5a2b]">{l.full_name}</td>
+                        <td className="p-4 font-mono select-all">{l.email}</td>
+                        <td className="p-4 text-[#5c4a3c]">{l.phone || '—'}</td>
+                        <td className="p-4 text-[#5c4a3c]">{l.address || '—'}</td>
+                        <td className="p-4 text-[10px] font-mono text-slate-400 select-all">{l.id}</td>
                       </tr>
                     ))
                   )}
@@ -1606,6 +1713,105 @@ export default function SecretariatDashboard() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+      {/* מודל הוספת לקוח חדש */}
+      {showCreateClientModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/40 backdrop-blur-sm">
+          <div className="parchment-panel w-full max-w-md p-6 border-[#eadeca] shadow-2xl animate-in fade-in zoom-in duration-200 torah-card">
+            
+            <div className="flex items-center justify-between border-b border-[#eadeca] pb-3 mb-5">
+              <h3 className="text-lg font-bold text-serif text-[#2d1e10] flex items-center gap-2">
+                <Users className="h-5 w-5 text-[#8b5a2b]" />
+                <span>הוספת בעל דין חדש</span>
+              </h3>
+              <button
+                onClick={() => setShowCreateClientModal(false)}
+                className="text-[#5c4a3c] hover:text-[#2d1e10] text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateClientSubmit} className="space-y-4 text-xs font-semibold">
+              <div>
+                <label className="block text-[#2d1e10] mb-1">שם מלא *:</label>
+                <input
+                  type="text"
+                  placeholder="לדוגמה: אברהם כהן"
+                  value={clientFormName}
+                  onChange={(e) => setClientFormName(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#2d1e10] mb-1">כתובת אימייל * (ישמש לחיבור גוגל):</label>
+                <input
+                  type="email"
+                  placeholder="example@gmail.com"
+                  value={clientFormEmail}
+                  onChange={(e) => setClientFormEmail(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#2d1e10] mb-1">מספר טלפון:</label>
+                <input
+                  type="text"
+                  placeholder="לדוגמה: 050-1234567"
+                  value={clientFormPhone}
+                  onChange={(e) => setClientFormPhone(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#2d1e10] mb-1">כתובת מגורים:</label>
+                <input
+                  type="text"
+                  placeholder="רחוב, עיר"
+                  value={clientFormAddress}
+                  onChange={(e) => setClientFormAddress(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium"
+                />
+              </div>
+
+              {/* שגיאות או הצלחה */}
+              {clientError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>{clientError}</span>
+                </div>
+              )}
+
+              {clientSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                  <span>{clientSuccess}</span>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-[#eadeca] flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateClientModal(false)}
+                  className="px-4 py-2 rounded-xl bg-[#faf6ee] border border-[#eadeca] text-[#5c4a3c] hover:bg-[#f3eedf] cursor-pointer"
+                >
+                  ביטול
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl gold-button font-bold cursor-pointer"
+                >
+                  הוסף לקוח
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -197,3 +197,20 @@ export async function submitClientRequestAction(data: z.infer<typeof submitClien
     validated.description
   );
 }
+
+const createProfileSchema = z.object({
+  full_name: z.string().min(1, "שם מלא הוא שדה חובה"),
+  email: z.string().email("כתובת אימייל לא תקינה"),
+  phone: z.string().optional().default(''),
+  address: z.string().optional().default('')
+});
+
+export async function createProfileAction(data: z.infer<typeof createProfileSchema>) {
+  const validated = createProfileSchema.parse(data);
+  const supabase = await createClient();
+  
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  return await dbSupabaseService.createProfile(supabase, validated);
+}
