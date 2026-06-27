@@ -172,13 +172,17 @@ export default function SecretariatDashboard() {
     setCreateCaseSuccess("");
 
     if (!newCaseNumber.trim() || !newCaseTitle.trim() || !newCasePanelId || 
-        !newCasePName.trim() || !newCasePEmail.trim() || 
-        !newCaseDName.trim() || !newCaseDEmail.trim()) {
-      setCreateCaseError("נא למלא את כל שדות החובה (שם ומייל לתובע ולנתבע, מספר תיק ונושא).");
+        !newCasePName.trim() || !newCasePEmail.trim()) {
+      setCreateCaseError("נא למלא את שדות החובה (שם ומייל לתובע, מספר תיק ונושא).");
       return;
     }
 
-    if (newCasePEmail.trim().toLowerCase() === newCaseDEmail.trim().toLowerCase()) {
+    if (newCaseDEmail.trim() && !newCaseDName.trim()) {
+      setCreateCaseError("נא למלא את שם הנתבע אם הזנת כתובת מייל עבורו.");
+      return;
+    }
+
+    if (newCaseDEmail.trim() && newCasePEmail.trim().toLowerCase() === newCaseDEmail.trim().toLowerCase()) {
       setCreateCaseError("כתובת המייל של התובע והנתבע אינה יכולה להיות זהה.");
       return;
     }
@@ -194,12 +198,12 @@ export default function SecretariatDashboard() {
           phone: newCasePPhone.trim(),
           address: newCasePAddress.trim()
         },
-        {
+        newCaseDEmail.trim() ? {
           full_name: newCaseDName.trim(),
           email: newCaseDEmail.trim(),
           phone: newCaseDPhone.trim(),
           address: newCaseDAddress.trim()
-        }
+        } : undefined
       );
 
       setCreateCaseSuccess("התיק נפתח ונרשם במערכת בהצלחה!");
@@ -977,6 +981,28 @@ export default function SecretariatDashboard() {
                     פרטי צד תובע
                   </h4>
                   <div>
+                    <label className="block text-[#2d1e10] mb-1">בחירת בעל דין קיים:</label>
+                    <select
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        if (!selectedId) return;
+                        const u = litigants.find(l => l.id === selectedId);
+                        if (u) {
+                          setNewCasePName(u.full_name);
+                          setNewCasePEmail(u.email);
+                          setNewCasePPhone(u.phone || "");
+                          setNewCasePAddress(u.address || "");
+                        }
+                      }}
+                      className="w-full bg-white border border-[#eadeca] rounded-lg px-2.5 py-1.5 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium text-xs mb-2"
+                    >
+                      <option value="">-- בחר תובע מהמערכת --</option>
+                      {litigants.map(l => (
+                        <option key={l.id} value={l.id}>{l.full_name} ({l.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
                     <label className="block text-[#2d1e10] mb-1">שם מלא *:</label>
                     <input
                       type="text"
@@ -1026,14 +1052,35 @@ export default function SecretariatDashboard() {
                     פרטי צד נתבע
                   </h4>
                   <div>
-                    <label className="block text-[#2d1e10] mb-1">שם מלא *:</label>
+                    <label className="block text-[#2d1e10] mb-1">בחירת בעל דין קיים:</label>
+                    <select
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        if (!selectedId) return;
+                        const u = litigants.find(l => l.id === selectedId);
+                        if (u) {
+                          setNewCaseDName(u.full_name);
+                          setNewCaseDEmail(u.email);
+                          setNewCaseDPhone(u.phone || "");
+                          setNewCaseDAddress(u.address || "");
+                        }
+                      }}
+                      className="w-full bg-white border border-[#eadeca] rounded-lg px-2.5 py-1.5 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium text-xs mb-2"
+                    >
+                      <option value="">-- בחר נתבע מהמערכת --</option>
+                      {litigants.map(l => (
+                        <option key={l.id} value={l.id}>{l.full_name} ({l.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[#2d1e10] mb-1">שם מלא:</label>
                     <input
                       type="text"
                       placeholder="שם הנתבע"
                       value={newCaseDName}
                       onChange={(e) => setNewCaseDName(e.target.value)}
                       className="w-full bg-white border border-[#eadeca] rounded-lg px-2.5 py-1.5 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium text-xs"
-                      required
                     />
                   </div>
                   <div>
@@ -1047,14 +1094,13 @@ export default function SecretariatDashboard() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[#2d1e10] mb-1">מייל *:</label>
+                    <label className="block text-[#2d1e10] mb-1">מייל:</label>
                     <input
                       type="email"
                       placeholder="example@mail.com"
                       value={newCaseDEmail}
                       onChange={(e) => setNewCaseDEmail(e.target.value)}
                       className="w-full bg-white border border-[#eadeca] rounded-lg px-2.5 py-1.5 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium text-xs"
-                      required
                     />
                   </div>
                   <div>

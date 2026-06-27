@@ -68,8 +68,8 @@ export const dbSupabaseService = {
     caseNumber: string,
     title: string,
     panelId: string,
-    plaintiff: { full_name: string; email: string; phone: string; address: string },
-    defendant: { full_name: string; email: string; phone: string; address: string }
+    plaintiff?: { full_name: string; email: string; phone: string; address: string },
+    defendant?: { full_name: string; email: string; phone: string; address: string }
   ): Promise<Case> {
     const genUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
       const r = Math.random() * 16 | 0;
@@ -78,43 +78,47 @@ export const dbSupabaseService = {
     });
 
     // 1. יצירה או עדכון של פרופיל התובע
-    let plaintiffId: string;
-    const { data: pExisting } = await supabase.from('profiles').select('id').eq('email', plaintiff.email).maybeSingle();
-    if (pExisting) {
-      plaintiffId = pExisting.id;
-      await supabase.from('profiles').update({ full_name: plaintiff.full_name, phone: plaintiff.phone, address: plaintiff.address }).eq('id', plaintiffId);
-    } else {
-      const pUUID = genUUID();
-      const { data: pNew, error: pErr } = await supabase.from('profiles').insert({
-        id: pUUID,
-        full_name: plaintiff.full_name,
-        email: plaintiff.email,
-        phone: plaintiff.phone,
-        address: plaintiff.address,
-        system_role: 'litigant'
-      }).select().single();
-      if (pErr) throw pErr;
-      plaintiffId = pNew.id;
+    let plaintiffId: string | null = null;
+    if (plaintiff && plaintiff.email) {
+      const { data: pExisting } = await supabase.from('profiles').select('id').eq('email', plaintiff.email).maybeSingle();
+      if (pExisting) {
+        plaintiffId = pExisting.id;
+        await supabase.from('profiles').update({ full_name: plaintiff.full_name, phone: plaintiff.phone, address: plaintiff.address }).eq('id', plaintiffId);
+      } else {
+        const pUUID = genUUID();
+        const { data: pNew, error: pErr } = await supabase.from('profiles').insert({
+          id: pUUID,
+          full_name: plaintiff.full_name,
+          email: plaintiff.email,
+          phone: plaintiff.phone,
+          address: plaintiff.address,
+          system_role: 'litigant'
+        }).select().single();
+        if (pErr) throw pErr;
+        plaintiffId = pNew.id;
+      }
     }
 
     // 2. יצירה או עדכון של פרופיל הנתבע
-    let defendantId: string;
-    const { data: dExisting } = await supabase.from('profiles').select('id').eq('email', defendant.email).maybeSingle();
-    if (dExisting) {
-      defendantId = dExisting.id;
-      await supabase.from('profiles').update({ full_name: defendant.full_name, phone: defendant.phone, address: defendant.address }).eq('id', defendantId);
-    } else {
-      const dUUID = genUUID();
-      const { data: dNew, error: dErr } = await supabase.from('profiles').insert({
-        id: dUUID,
-        full_name: defendant.full_name,
-        email: defendant.email,
-        phone: defendant.phone,
-        address: defendant.address,
-        system_role: 'litigant'
-      }).select().single();
-      if (dErr) throw dErr;
-      defendantId = dNew.id;
+    let defendantId: string | null = null;
+    if (defendant && defendant.email) {
+      const { data: dExisting } = await supabase.from('profiles').select('id').eq('email', defendant.email).maybeSingle();
+      if (dExisting) {
+        defendantId = dExisting.id;
+        await supabase.from('profiles').update({ full_name: defendant.full_name, phone: defendant.phone, address: defendant.address }).eq('id', defendantId);
+      } else {
+        const dUUID = genUUID();
+        const { data: dNew, error: dErr } = await supabase.from('profiles').insert({
+          id: dUUID,
+          full_name: defendant.full_name,
+          email: defendant.email,
+          phone: defendant.phone,
+          address: defendant.address,
+          system_role: 'litigant'
+        }).select().single();
+        if (dErr) throw dErr;
+        defendantId = dNew.id;
+      }
     }
 
     // 3. יצירת התיק
@@ -126,11 +130,18 @@ export const dbSupabaseService = {
     if (caseErr) throw caseErr;
 
     // 4. קישור המשתתפים לתיק
-    const { error: partErr } = await supabase.from('case_participants').insert([
-      { case_id: newCase.id, user_id: plaintiffId, party_role: 'plaintiff' },
-      { case_id: newCase.id, user_id: defendantId, party_role: 'defendant' }
-    ]);
-    if (partErr) throw partErr;
+    const participantsToInsert = [];
+    if (plaintiffId) {
+      participantsToInsert.push({ case_id: newCase.id, user_id: plaintiffId, party_role: 'plaintiff' });
+    }
+    if (defendantId) {
+      participantsToInsert.push({ case_id: newCase.id, user_id: defendantId, party_role: 'defendant' });
+    }
+
+    if (participantsToInsert.length > 0) {
+      const { error: partErr } = await supabase.from('case_participants').insert(participantsToInsert);
+      if (partErr) throw partErr;
+    }
 
     return newCase;
   },

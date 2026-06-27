@@ -136,8 +136,8 @@ export const dbMockService = {
     caseNumber: string,
     title: string,
     panelId: string,
-    plaintiff: { full_name: string; email: string; phone: string; address: string },
-    defendant: { full_name: string; email: string; phone: string; address: string }
+    plaintiff?: { full_name: string; email: string; phone: string; address: string },
+    defendant?: { full_name: string; email: string; phone: string; address: string }
   ): Promise<Case> {
     const cases = getLocalData<Case[]>('cases', INITIAL_CASES);
     const profiles = getLocalData<UserProfile[]>('profiles', INITIAL_PROFILES);
@@ -164,8 +164,14 @@ export const dbMockService = {
       return profile;
     };
 
-    const pProfile = findOrCreateProfile(plaintiff);
-    const dProfile = findOrCreateProfile(defendant);
+    let pProfile = null;
+    if (plaintiff && plaintiff.email) {
+      pProfile = findOrCreateProfile(plaintiff);
+    }
+    let dProfile = null;
+    if (defendant && defendant.email) {
+      dProfile = findOrCreateProfile(defendant);
+    }
     setLocalData('profiles', profiles);
 
     const newCase: Case = {
@@ -179,18 +185,22 @@ export const dbMockService = {
     cases.push(newCase);
     setLocalData('cases', cases);
 
-    allParts.push({
-      id: `cp-${Date.now()}-p`,
-      case_id: newCase.id,
-      user_id: pProfile.id,
-      party_role: 'plaintiff'
-    });
-    allParts.push({
-      id: `cp-${Date.now()}-d`,
-      case_id: newCase.id,
-      user_id: dProfile.id,
-      party_role: 'defendant'
-    });
+    if (pProfile) {
+      allParts.push({
+        id: `cp-${Date.now()}-p`,
+        case_id: newCase.id,
+        user_id: pProfile.id,
+        party_role: 'plaintiff'
+      });
+    }
+    if (dProfile) {
+      allParts.push({
+        id: `cp-${Date.now()}-d`,
+        case_id: newCase.id,
+        user_id: dProfile.id,
+        party_role: 'defendant'
+      });
+    }
     setLocalData('participants', allParts);
 
     return newCase;

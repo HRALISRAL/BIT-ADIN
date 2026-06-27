@@ -21,8 +21,8 @@ const createCaseSchema = z.object({
   caseNumber: z.string().min(1, "מספר סידורי הוא שדה חובה"),
   title: z.string().min(1, "נושא התיק הוא שדה חובה"),
   panelId: z.string().uuid("הרכב דיינים לא תקין"),
-  plaintiff: litigantSchema,
-  defendant: litigantSchema
+  plaintiff: litigantSchema.optional(),
+  defendant: litigantSchema.optional()
 });
 
 const scheduleHearingSchema = z.object({

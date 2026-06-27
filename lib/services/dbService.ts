@@ -64,8 +64,8 @@ export const dbService = {
     caseNumber: string,
     title: string,
     panelId: string,
-    plaintiff: { full_name: string; email: string; phone: string; address: string },
-    defendant: { full_name: string; email: string; phone: string; address: string }
+    plaintiff?: { full_name: string; email: string; phone: string; address: string },
+    defendant?: { full_name: string; email: string; phone: string; address: string }
   ): Promise<Case> {
     if (isMockMode || !supabase) {
       return dbMockService.createCase(caseNumber, title, panelId, plaintiff, defendant);
