@@ -11,8 +11,12 @@ if (isMockMode && typeof window !== 'undefined') {
   console.warn('⚠️ מפתחות API של Supabase חסרים. המערכת תפעל במצב סימולציה (Mock Mode).');
 }
 
-// createBrowserClient שומר את הסשן ב-cookies במקום ב-localStorage
-// כך ה-Middleware (שרץ בצד השרת) יכול לקרוא את הסשן ולאמת את המשתמש
+// createBrowserClient שומר את הסשן ב-cookies ונגיש גם ל-Middleware
+// flowType: 'implicit' → גוגל מחזיר access_token ישירות ב-hash ללא צורך ב-PKCE exchange
 export const supabase = !isMockMode && supabaseUrl && supabaseAnonKey
-  ? createBrowserClient(supabaseUrl, supabaseAnonKey)
+  ? createBrowserClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        flowType: 'implicit',
+      }
+    })
   : null as any;
