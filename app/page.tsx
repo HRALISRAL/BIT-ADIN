@@ -171,12 +171,7 @@ export default function Home() {
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-          flowType: 'implicit',
-        } as any,
+        },
       });
       if (error) throw error;
     } catch (err: any) {

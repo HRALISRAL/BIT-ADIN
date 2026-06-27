@@ -13,11 +13,10 @@ if (isMockMode && typeof window !== 'undefined') {
   );
 }
 
-// יצירת הלקוח של Supabase עם implicit flow כדי שה-access token יגיע ישירות ב-URL hash
+// יצירת הלקוח של Supabase עם הגדרות PKCE סטנדרטיות
 export const supabase = !isMockMode && supabaseUrl && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
-        flowType: 'implicit',
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true,
