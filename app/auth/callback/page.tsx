@@ -93,8 +93,12 @@ export default function AuthCallbackPage() {
           .single();
 
         if (!byEmail) {
+          // משתמש אינו מורשה במערכת - נבצע התנתקות מלאה כדי לא להשאיר סשן פתוח
+          await supabase.auth.signOut();
+          localStorage.removeItem("current_user_id");
+          localStorage.removeItem("current_user_role");
           setErrorDetail(
-            `לא נמצא פרופיל.\nid: ${session.user.id}\nemail: ${session.user.email}\nשגיאה: ${profileError?.message}`
+            "המייל אינו רשום במערכת. אנא פנה למזכירות להסדרת הרישום."
           );
           return;
         }

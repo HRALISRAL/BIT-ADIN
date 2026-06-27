@@ -66,6 +66,11 @@ export async function middleware(request: NextRequest) {
     .eq('id', user.id)
     .single();
 
+  if (!profile) {
+    // אם אין פרופיל, המשתמש אינו מורשה במערכת. נחזיר אותו לדף הבית עם שגיאה
+    return NextResponse.redirect(new URL('/?error=' + encodeURIComponent('המייל אינו רשום במערכת. אנא פנה למזכירות.'), request.url));
+  }
+
   const role = profile?.system_role;
 
   // חסימת כניסה לנתיבי מזכירות למי שאינו מוגדר כ-secretariat
