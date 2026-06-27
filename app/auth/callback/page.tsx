@@ -27,7 +27,7 @@ export default function AuthCallbackPage() {
 
     // האזנה לשינוי מצב ההתחברות - Supabase יטפל בהחלפת הקוד אוטומטית
     // בגלל detectSessionInUrl: true שהגדרנו ב-client.ts
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
       setStatus(`אירוע: ${event}`);
 
       if (event === "SIGNED_IN" && session) {
