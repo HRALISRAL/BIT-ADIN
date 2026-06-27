@@ -1,6 +1,6 @@
 "use client";
 // app/auth/callback/page.tsx - דף ניהול קאלבק OAuth
-// משתמש ב-onAuthStateChange כפי שמומלץ ע"י Supabase לטיפול בהחזרה מ-OAuth
+// מטפל בשני מצבים: access_token בـhash (implicit) או code בـquery (PKCE)
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase/client";
@@ -16,65 +16,123 @@ export default function AuthCallbackPage() {
       return;
     }
 
-    // בדיקת שגיאה ישירה מ-URL (שגיאה מגוגל או מ-Supabase)
-    const searchParams = new URLSearchParams(window.location.search);
-    const errorParam = searchParams.get("error");
-    const errorDesc = searchParams.get("error_description");
-    if (errorParam) {
-      setErrorDetail(`שגיאה מספק OAuth: ${errorDesc || errorParam}`);
-      return;
-    }
+    async function handleCallback() {
+      try {
+        // בדיקת שגיאה ישירה מ-URL
+        const searchParams = new URLSearchParams(window.location.search);
+        const errorParam = searchParams.get("error");
+        const errorDesc = searchParams.get("error_description");
+        if (errorParam) {
+          setErrorDetail(`שגיאה מספק OAuth: ${errorDesc || errorParam}`);
+          return;
+        }
 
-    // האזנה לשינוי מצב ההתחברות - Supabase יטפל בהחלפת הקוד אוטומטית
-    // בגלל detectSessionInUrl: true שהגדרנו ב-client.ts
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
-      setStatus(`אירוע: ${event}`);
+        // קריאת ה-hash מה-URL (implicit flow - access_token בـhash)
+        const hash = window.location.hash.substring(1);
+        const hashParams = new URLSearchParams(hash);
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token") || "";
 
-      if (event === "SIGNED_IN" && session) {
-        setStatus("מחובר! שולף הרשאות...");
-        
-        try {
-          const { data: profile, error: profileError } = await supabase
+        // קריאת הקוד מה-query (PKCE flow - code בـquery)
+        const code = searchParams.get("code");
+
+        let session = null;
+
+        if (accessToken) {
+          // Implicit flow - יש access_token ישירות ב-hash
+          setStatus("מגדיר סשן מ-access token...");
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (error) {
+            setErrorDetail(`שגיאה בsetSession: ${error.message}`);
+            return;
+          }
+          session = data.session;
+        } else if (code) {
+          // PKCE flow - יש code בـquery
+          setStatus("מחליף קוד לסשן...");
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            setErrorDetail(`שגיאה בexchangeCode: ${error.message}`);
+            return;
+          }
+          session = data.session;
+        } else {
+          // ייתכן שהסשן כבר קיים
+          setStatus("בודק סשן קיים...");
+          const { data } = await supabase.auth.getSession();
+          session = data.session;
+          if (!session) {
+            setErrorDetail(`לא נמצא access_token, code, או סשן קיים.\nURL: ${window.location.href}`);
+            return;
+          }
+        }
+
+        if (!session) {
+          setErrorDetail("הסשן הוחזר כ-null לאחר אתחול.");
+          return;
+        }
+
+        setStatus(`מחובר! (${session.user.email}) שולף הרשאות...`);
+
+        // שמירה ב-localStorage לתאימות עם שאר הקוד
+        localStorage.setItem("current_user_id", session.user.id);
+
+        // שליפת פרופיל מהבסיס נתונים
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("system_role")
+          .eq("id", session.user.id)
+          .single();
+
+        if (profileError || !profile) {
+          // ניסיון חלופי - חיפוש לפי מייל
+          setStatus("מנסה חיפוש לפי מייל...");
+          const { data: profileByEmail, error: emailError } = await supabase
             .from("profiles")
-            .select("system_role")
-            .eq("id", session.user.id)
+            .select("id, system_role")
+            .eq("email", session.user.email)
             .single();
 
-          if (profileError || !profile) {
+          if (emailError || !profileByEmail) {
             setErrorDetail(
-              `שגיאת פרופיל: ${profileError?.message || "לא נמצא פרופיל"} | user.id=${session.user.id} | email=${session.user.email}`
+              `לא נמצא פרופיל.\nuser.id: ${session.user.id}\nemail: ${session.user.email}\nשגיאה: ${profileError?.message}`
             );
             return;
           }
 
-          localStorage.setItem("current_user_id", session.user.id);
-          localStorage.setItem("current_user_role", profile.system_role);
-          setStatus("מועבר לממשק...");
+          // נמצא לפי מייל - עדכן ה-UUID בבסיס הנתונים
+          await supabase
+            .from("profiles")
+            .update({ id: session.user.id })
+            .eq("email", session.user.email);
 
-          if (profile.system_role === "secretariat") {
+          localStorage.setItem("current_user_role", profileByEmail.system_role);
+          setStatus("מועבר לממשק...");
+          if (profileByEmail.system_role === "secretariat") {
             router.push("/dashboard/secretariat");
           } else {
             router.push("/dashboard/client");
           }
-        } catch (err: any) {
-          setErrorDetail(`שגיאה בשליפת פרופיל: ${err?.message}`);
+          return;
         }
-      } else if (event === "SIGNED_OUT" || (!session && event !== "INITIAL_SESSION")) {
-        setErrorDetail(`הסשן לא נוצר. אירוע: ${event} | URL: ${window.location.href}`);
+
+        localStorage.setItem("current_user_role", profile.system_role);
+        setStatus("מועבר לממשק...");
+
+        if (profile.system_role === "secretariat") {
+          router.push("/dashboard/secretariat");
+        } else {
+          router.push("/dashboard/client");
+        }
+      } catch (err: any) {
+        setErrorDetail(`שגיאה כללית: ${err?.message || JSON.stringify(err)}`);
       }
-    });
+    }
 
-    // timeout - אם אחרי 8 שניות אין אירוע, מציג שגיאה
-    const timeout = setTimeout(() => {
-      setErrorDetail(
-        `פג זמן ההמתנה לאירוע Auth. URL נוכחי: ${window.location.href} | hash: ${window.location.hash}`
-      );
-    }, 8000);
-
-    return () => {
-      subscription.unsubscribe();
-      clearTimeout(timeout);
-    };
+    handleCallback();
   }, [router]);
 
   return (
