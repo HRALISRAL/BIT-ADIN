@@ -5,15 +5,23 @@ import { createClient } from '../../../lib/supabase/server';
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
+  const error = searchParams.get('error');
+  const errorDescription = searchParams.get('error_description');
   const next = searchParams.get('next') ?? '/';
+
+  // טיפול בשגיאה שמתקבלת ישירות מ-Supabase/Google
+  if (error) {
+    console.error('OAuth callback error from provider:', error, errorDescription);
+    return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(errorDescription || error)}`);
+  }
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
     
-    if (error) {
-      console.error('OAuth callback session exchange error:', error);
-      return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(error.message)}`);
+    if (exchangeError) {
+      console.error('OAuth callback session exchange error:', exchangeError);
+      return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(exchangeError.message)}`);
     }
 
     // שליפת המשתמש שזה עתה התחבר כדי לזהות את התפקיד שלו
@@ -44,6 +52,6 @@ export async function GET(request: Request) {
     }
   }
 
-  // במקרה של שגיאה או חוסר קוד, מחזירים לדף הבית
+  // במקרה של חוסר קוד או שגיאה לא ידועה, מחזירים לדף הבית
   return NextResponse.redirect(`${origin}${next}`);
 }
