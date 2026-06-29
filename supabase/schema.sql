@@ -197,7 +197,15 @@ CREATE POLICY "Profiles are viewable by authenticated users"
 ON public.profiles FOR SELECT TO authenticated USING (true);
 
 CREATE POLICY "Users can update their own profile" 
-ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = id);
+ON public.profiles FOR UPDATE TO authenticated 
+USING (
+    auth.uid() = id 
+    OR 
+    LOWER(email) = LOWER(auth.jwt() ->> 'email')
+)
+WITH CHECK (
+    id = auth.uid()
+);
 
 CREATE POLICY "Secretariat has full control over profiles" 
 ON public.profiles FOR ALL TO authenticated USING (public.is_secretariat());
