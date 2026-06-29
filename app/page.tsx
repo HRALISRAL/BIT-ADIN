@@ -61,6 +61,32 @@ export default function Home() {
     }
   }, []);
 
+  useEffect(() => {
+    async function checkActiveSession() {
+      if (isMockMode || !supabase) return;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const profile = await dbService.getProfile(session.user.id);
+          if (profile) {
+            if (typeof window !== "undefined") {
+              localStorage.setItem("current_user_id", profile.id);
+              localStorage.setItem("current_user_role", profile.system_role);
+            }
+            if (profile.system_role === "secretariat") {
+              router.push("/dashboard/secretariat");
+            } else {
+              router.push(`/dashboard/client?userId=${profile.id}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to check active session:", err);
+      }
+    }
+    checkActiveSession();
+  }, [router]);
+
   const handleMockLogin = () => {
     const profile = profiles.find(p => p.id === selectedProfile);
     if (!profile) return;
@@ -338,14 +364,14 @@ export default function Home() {
                   הזדהות בעלי דין ומזכירות בית הדין
                 </p>
 
-                {/* בורר מצבים: התחברות או הרשמה */}
-                <div className="flex border-b border-[#eadeca] mb-6 text-xs font-bold font-serif">
+                {/* בורר מצבים מעוצב כסגמנט (Segment Control) ללא חפיפה */}
+                <div className="grid grid-cols-2 p-1 bg-[#faf6ee] border border-[#eadeca] rounded-xl mb-6 text-xs font-bold font-serif w-full dir-rtl text-right">
                   <button
                     type="button"
                     onClick={() => { setAuthMode("login"); setAuthError(""); setAuthSuccess(""); }}
-                    className={`flex-1 pb-3 text-center transition-all cursor-pointer ${
+                    className={`py-2 px-3 rounded-lg text-center transition-all cursor-pointer ${
                       authMode === "login"
-                        ? "border-b-2 border-[#a27b18] text-[#a27b18]"
+                        ? "bg-[#cda851] text-white shadow-sm font-black"
                         : "text-[#5c4a3c] hover:text-[#2d1e10]"
                     }`}
                   >
@@ -354,9 +380,9 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => { setAuthMode("signup"); setAuthError(""); setAuthSuccess(""); }}
-                    className={`flex-1 pb-3 text-center transition-all cursor-pointer ${
+                    className={`py-2 px-3 rounded-lg text-center transition-all cursor-pointer ${
                       authMode === "signup"
-                        ? "border-b-2 border-[#a27b18] text-[#a27b18]"
+                        ? "bg-[#cda851] text-white shadow-sm font-black"
                         : "text-[#5c4a3c] hover:text-[#2d1e10]"
                     }`}
                   >
