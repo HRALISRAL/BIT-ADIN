@@ -57,7 +57,7 @@ const uploadDocumentSchema = z.object({
   documentType: z.enum(['plaintiff', 'defendant', 'secretariat']),
   fileName: z.string(),
   fileBlobMockUrl: z.string().optional(),
-  folderType: z.enum(['General', 'Plaintiff_Docs', 'Defendant_Docs']).optional().default('General')
+  folderType: z.enum(['General', 'Plaintiff_Docs', 'Defendant_Docs']).optional()
 });
 
 const updateRequestStatusSchema = z.object({
@@ -125,7 +125,7 @@ const uploadCaseDocumentSchema = z.object({
   documentType: z.enum(['plaintiff', 'defendant', 'secretariat']),
   fileName: z.string(),
   filePath: z.string(),
-  folderType: z.enum(['General', 'Plaintiff_Docs', 'Defendant_Docs']).optional().default('General')
+  folderType: z.enum(['General', 'Plaintiff_Docs', 'Defendant_Docs']).optional()
 });
 
 // =========================================================================
