@@ -531,5 +531,12 @@ export const dbMockService = {
     messages.push(newMsg);
     setLocalData('messages', messages);
     return newMsg;
+  },
+
+  async deleteProfile(userId: string): Promise<boolean> {
+    const profiles = getLocalData<UserProfile[]>('profiles', INITIAL_PROFILES);
+    const filtered = profiles.filter(p => p.id !== userId);
+    setLocalData('profiles', filtered);
+    return true;
   }
 };

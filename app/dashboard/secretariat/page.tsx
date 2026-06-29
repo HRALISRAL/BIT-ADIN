@@ -1041,17 +1041,35 @@ export default function SecretariatDashboard() {
                         <td className="p-4 text-[#5c4a3c]">{l.phone || '—'}</td>
                         <td className="p-4 text-[#5c4a3c]">{l.address || '—'}</td>
                         <td className="p-4 text-[10px] font-mono text-slate-400 select-all">{l.id}</td>
-                        <td className="p-4 text-center">
-                          <button
-                            onClick={() => {
-                              setMsgRecipient(l);
-                              setShowSendMessageModal(true);
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-[#faf6ee] border border-[#eadeca] hover:bg-[#f3eedf] text-[#8b5a2b] font-bold transition-all flex items-center gap-1 cursor-pointer mx-auto"
-                          >
-                            <Mail className="h-3 w-3" />
-                            <span>שלח הודעה</span>
-                          </button>
+                        <td className="p-4">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => {
+                                setMsgRecipient(l);
+                                setShowSendMessageModal(true);
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-[#faf6ee] border border-[#eadeca] hover:bg-[#f3eedf] text-[#8b5a2b] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                              <Mail className="h-3 w-3" />
+                              <span>הודעה</span>
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (confirm(`האם אתה בטוח שברצונך למחוק את הלקוח ${l.full_name}?`)) {
+                                  try {
+                                    await dbService.deleteProfile(l.id);
+                                    await loadData();
+                                  } catch (err: any) {
+                                    alert("שגיאה במחיקת הלקוח: " + err.message);
+                                  }
+                                }
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-rose-50 border border-rose-200 hover:bg-rose-600 hover:text-white text-rose-700 font-bold transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                              <XCircle className="h-3.5 w-3.5" />
+                              <span>מחק</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))

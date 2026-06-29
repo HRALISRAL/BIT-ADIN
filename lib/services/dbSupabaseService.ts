@@ -512,5 +512,14 @@ export const dbSupabaseService = {
 
     if (error) throw error;
     return data;
+  },
+
+  async deleteProfile(supabase: SupabaseClient, userId: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', userId);
+    if (error) throw error;
+    return true;
   }
 };

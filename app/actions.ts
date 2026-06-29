@@ -264,3 +264,17 @@ export async function sendMessageAction(data: z.infer<typeof sendMessageSchema>)
     validated.caseId
   );
 }
+
+const deleteProfileSchema = z.object({
+  userId: z.string().uuid("מזהה משתמש לא תקין")
+});
+
+export async function deleteProfileAction(data: z.infer<typeof deleteProfileSchema>) {
+  const validated = deleteProfileSchema.parse(data);
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  return await dbSupabaseService.deleteProfile(supabase, validated.userId);
+}

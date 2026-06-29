@@ -13,7 +13,8 @@ import {
   submitClientRequestAction,
   createProfileAction,
   sendMessageAction,
-  uploadCaseDocumentAction
+  uploadCaseDocumentAction,
+  deleteProfileAction
 } from '../../app/actions';
 import { 
   UserProfile, 
@@ -207,5 +208,12 @@ export const dbService = {
       return dbMockService.uploadCaseDocument(caseId, userId, documentType, fileName, filePath);
     }
     return uploadCaseDocumentAction({ caseId, userId, documentType, fileName, filePath });
+  },
+
+  async deleteProfile(userId: string): Promise<boolean> {
+    if (isMockMode || !supabase) {
+      return dbMockService.deleteProfile(userId);
+    }
+    return deleteProfileAction({ userId });
   }
 };
