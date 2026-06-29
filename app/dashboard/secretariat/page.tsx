@@ -96,6 +96,10 @@ export default function SecretariatDashboard() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsCourtName, setSettingsCourtName] = useState("");
 
+  // מודל לוח שנה כללי לכל הדיונים
+  const [showFullCalendarModal, setShowFullCalendarModal] = useState(false);
+  const [calendarMonthDate, setCalendarMonthDate] = useState<Date>(new Date());
+
   // שדות טופס שיבוץ דיון
   const [scheduleCaseId, setScheduleCaseId] = useState("");
   const [schedulePanelId, setSchedulePanelId] = useState("");
@@ -616,11 +620,60 @@ export default function SecretariatDashboard() {
     }
   };
 
+  const isDateInCurrentWeek = (dateStr: string) => {
+    if (!dateStr) return false;
+    const date = new Date(dateStr);
+    const now = new Date();
+    
+    // Get Sunday of current week
+    const startOfWeek = new Date(now);
+    const day = startOfWeek.getDay();
+    startOfWeek.setDate(startOfWeek.getDate() - day);
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    // Get Saturday of current week (end of week)
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(endOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+    
+    return date >= startOfWeek && date <= endOfWeek;
+  };
+
   const getHearingsByDay = (dayOfWeek: number) => {
     return hearings.filter(h => {
       const panel = panels.find(p => p.id === h.panel_id);
-      return panel?.day_of_week === dayOfWeek;
+      return panel?.day_of_week === dayOfWeek && isDateInCurrentWeek(h.hearing_date);
     });
+  };
+
+  const hebrewMonths = [
+    "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
+    "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"
+  ];
+
+  const getDaysInMonth = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startDayIndex = firstDay.getDay();
+    const totalDays = new Date(year, month + 1, 0).getDate();
+    
+    const days = [];
+    for (let i = 0; i < startDayIndex; i++) {
+      days.push(null);
+    }
+    for (let day = 1; day <= totalDays; day++) {
+      days.push(new Date(year, month, day));
+    }
+    return days;
+  };
+
+  const getHearingsForDate = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const localDateStr = `${y}-${m}-${d}`;
+    return hearings.filter(h => h.hearing_date === localDateStr);
   };
 
   // סינון תיקים דינמי לפי חיפוש (שם התיק, מספר סידורי או שם בעלי דין)
@@ -699,12 +752,17 @@ export default function SecretariatDashboard() {
             <div className="p-3 bg-[#8b5a2b]/10 text-[#8b5a2b] rounded-xl"><FileText className="h-6 w-6" /></div>
           </div>
           
-          <div className="parchment-panel p-6 border-[#eadeca] flex items-center justify-between">
+          <div 
+            onClick={() => setShowFullCalendarModal(true)}
+            className="parchment-panel p-6 border-[#eadeca] flex items-center justify-between cursor-pointer hover:border-[#cda851] hover:shadow-md transition-all group"
+          >
             <div>
-              <p className="text-xs text-[#5c4a3c] font-bold">דיונים משובצים השבוע</p>
+              <p className="text-xs text-[#5c4a3c] font-bold group-hover:text-[#a27b18] transition-colors">דיונים משובצים</p>
               <h3 className="text-3xl font-black text-serif text-[#2d1e10] mt-1">{hearings.length}</h3>
             </div>
-            <div className="p-3 bg-[#a27b18]/10 text-[#a27b18] rounded-xl"><Calendar className="h-6 w-6" /></div>
+            <div className="p-3 bg-[#a27b18]/10 text-[#a27b18] group-hover:bg-[#a27b18]/20 rounded-xl transition-all">
+              <Calendar className="h-6 w-6" />
+            </div>
           </div>
 
           <div className="parchment-panel p-6 border-[#eadeca] flex items-center justify-between">
@@ -1595,6 +1653,139 @@ export default function SecretariatDashboard() {
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          מודל לוח שנה מלא (Full Calendar Modal)
+          ========================================================================= */}
+      {showFullCalendarModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/40 backdrop-blur-sm">
+          <div className="parchment-panel w-full max-w-4xl p-6 border-[#eadeca] shadow-2xl animate-in fade-in zoom-in duration-200 torah-card max-h-[90vh] overflow-y-auto flex flex-col">
+            
+            <div className="flex items-center justify-between border-b border-[#eadeca] pb-3 mb-5">
+              <h3 className="text-lg font-bold text-serif text-[#2d1e10] flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-[#8b5a2b]" />
+                <span>לוח שנה מלא - כל הדיונים</span>
+              </h3>
+              <button
+                onClick={() => setShowFullCalendarModal(false)}
+                className="text-[#5c4a3c] hover:text-[#2d1e10] text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* בורר חודש ושנה */}
+            <div className="flex items-center justify-between mb-6 bg-[#faf6ee]/60 border border-[#eadeca] p-3 rounded-2xl">
+              <button
+                onClick={() => {
+                  const newDate = new Date(calendarMonthDate);
+                  newDate.setMonth(newDate.getMonth() - 1);
+                  setCalendarMonthDate(newDate);
+                }}
+                className="px-3 py-1.5 rounded-xl border border-[#eadeca] bg-white text-[#5c4a3c] hover:bg-[#faf6ee] text-xs font-bold cursor-pointer transition-colors"
+              >
+                ← חודש קודם
+              </button>
+              
+              <span className="text-lg font-bold text-serif text-[#2d1e10]">
+                {hebrewMonths[calendarMonthDate.getMonth()]} {calendarMonthDate.getFullYear()}
+              </span>
+
+              <button
+                onClick={() => {
+                  const newDate = new Date(calendarMonthDate);
+                  newDate.setMonth(newDate.getMonth() + 1);
+                  setCalendarMonthDate(newDate);
+                }}
+                className="px-3 py-1.5 rounded-xl border border-[#eadeca] bg-white text-[#5c4a3c] hover:bg-[#faf6ee] text-xs font-bold cursor-pointer transition-colors"
+              >
+                חודש הבא →
+              </button>
+            </div>
+
+            {/* גריד לוח שנה */}
+            <div className="flex-1 overflow-x-auto">
+              <div className="min-w-[600px]">
+                {/* שמות הימים */}
+                <div className="grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold text-[#8b5a2b] bg-[#faf6ee]/40 py-2 rounded-xl">
+                  <div>ראשון</div>
+                  <div>שני</div>
+                  <div>שלישי</div>
+                  <div>רביעי</div>
+                  <div>חמישי</div>
+                  <div className="text-slate-400">שישי</div>
+                  <div className="text-slate-400">שבת</div>
+                </div>
+
+                {/* ימי החודש */}
+                <div className="grid grid-cols-7 gap-2">
+                  {getDaysInMonth(calendarMonthDate).map((day, idx) => {
+                    if (!day) {
+                      return (
+                        <div key={`empty-${idx}`} className="min-h-[100px] bg-slate-50/20 rounded-xl border border-dashed border-slate-200/50"></div>
+                      );
+                    }
+
+                    const dateHearings = getHearingsForDate(day);
+                    const isToday = new Date().toDateString() === day.toDateString();
+                    const isWeekend = day.getDay() === 5 || day.getDay() === 6;
+
+                    return (
+                      <div
+                        key={day.toISOString()}
+                        className={`min-h-[100px] border p-2 rounded-xl flex flex-col justify-between transition-all ${
+                          isToday 
+                            ? 'bg-white border-[#cda851] shadow-md shadow-amber-600/5' 
+                            : isWeekend
+                              ? 'bg-slate-50/30 border-slate-100'
+                              : 'bg-[#faf6ee]/30 border-[#eadeca] hover:bg-amber-50/20'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className={`text-xs font-bold ${isToday ? 'text-[#cda851] font-black' : isWeekend ? 'text-slate-400' : 'text-[#2d1e10]'}`}>
+                            {day.getDate()}
+                          </span>
+                          {isToday && (
+                            <span className="text-[8px] bg-[#cda851]/10 text-[#cda851] px-1 rounded-md font-bold">היום</span>
+                          )}
+                        </div>
+
+                        <div className="flex-1 mt-1 space-y-1 overflow-y-auto max-h-[80px] custom-scrollbar">
+                          {dateHearings.map(h => (
+                            <div
+                              key={h.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDocs(h);
+                              }}
+                              className="bg-[#8b5a2b]/10 hover:bg-[#8b5a2b]/20 text-[#8b5a2b] text-[9px] p-1 rounded font-bold truncate cursor-pointer transition-colors text-right"
+                              title={`שעה: ${h.hearing_time} | ${h.case_title}`}
+                            >
+                              <span className="font-extrabold text-[8px] opacity-80 pl-1">{h.hearing_time}</span>
+                              <span>{h.case_title}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-[#eadeca] flex justify-end mt-6">
+              <button
+                type="button"
+                onClick={() => setShowFullCalendarModal(false)}
+                className="px-5 py-2 rounded-xl bg-[#faf6ee] border border-[#eadeca] text-[#5c4a3c] hover:bg-[#f3eedf] cursor-pointer text-sm font-bold"
+              >
+                סגור
+              </button>
+            </div>
+
           </div>
         </div>
       )}
