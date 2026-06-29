@@ -157,7 +157,11 @@ export default function SecretariatDashboard() {
             router.push("/");
             return;
           }
-          const profile = await dbService.getProfile(user.id);
+          let profile = await dbService.getProfile(user.id);
+          if (!profile) {
+            await new Promise(resolve => setTimeout(resolve, 800));
+            profile = await dbService.getProfile(user.id);
+          }
           if (!profile || profile.system_role !== "secretariat") {
             console.error("User does not have secretariat role:", profile);
             router.push("/");

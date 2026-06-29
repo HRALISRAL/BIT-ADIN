@@ -371,7 +371,8 @@ export const dbSupabaseService = {
         file_path: filePath,
         file_name: fileName,
         document_type: documentType,
-        is_shared: true
+        folder_type: finalFolderType,
+        is_shared: finalFolderType === 'General'
       })
       .select()
       .single();

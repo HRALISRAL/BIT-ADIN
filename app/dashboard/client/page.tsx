@@ -64,7 +64,11 @@ function ClientDashboardContent() {
     try {
       setLoading(true);
       
-      const profile = await dbService.getProfile(uid);
+      let profile = await dbService.getProfile(uid);
+      if (!profile) {
+        await new Promise(resolve => setTimeout(resolve, 800));
+        profile = await dbService.getProfile(uid);
+      }
       if (!profile) {
         router.push("/");
         return;
