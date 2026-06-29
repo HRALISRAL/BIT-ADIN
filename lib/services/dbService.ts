@@ -31,6 +31,15 @@ import {
   DocumentRequest
 } from '../../types';
 
+// פונקציית עזר לפריסת התשובה של ה-Server Action וזריקת שגיאה בקליינט (מונע ערפול בייצור)
+async function handleAction<T>(promise: Promise<{ success: boolean; data?: T; error?: string }>): Promise<T> {
+  const res = await promise;
+  if (!res.success) {
+    throw new Error(res.error || "שגיאת מערכת לא ידועה");
+  }
+  return res.data!;
+}
+
 export const dbService = {
   // -----------------------------------------------------------------------
   // פרופילים ואימות (Profiles)
@@ -79,8 +88,7 @@ export const dbService = {
     if (isMockMode || !supabase) {
       return dbMockService.createCase(caseNumber, title, panelId, plaintiff, defendant);
     }
-    // קריאה בצד השרת להרצת ה-Server Action המאובטח
-    return createCaseAction({ caseNumber, title, panelId, plaintiff, defendant });
+    return handleAction(createCaseAction({ caseNumber, title, panelId, plaintiff: plaintiff!, defendant }));
   },
 
   // -----------------------------------------------------------------------
@@ -97,7 +105,7 @@ export const dbService = {
     if (isMockMode || !supabase) {
       return dbMockService.scheduleHearing(caseId, panelId, dateStr, timeStr);
     }
-    return scheduleHearingAction({ caseId, panelId, dateStr, timeStr });
+    return handleAction(scheduleHearingAction({ caseId, panelId, dateStr, timeStr }));
   },
 
   getDayName(dayNum: number): string {
@@ -132,14 +140,14 @@ export const dbService = {
     if (isMockMode || !supabase) {
       return dbMockService.uploadDocument(hearingId, userId, documentType, fileName, fileBlobMockUrl, folderType);
     }
-    return uploadDocumentAction({ hearingId, userId, documentType, fileName, fileBlobMockUrl, folderType: folderType || 'General' });
+    return handleAction(uploadDocumentAction({ hearingId, userId, documentType, fileName, fileBlobMockUrl, folderType: folderType || 'General' }));
   },
 
   async toggleDocumentShare(documentId: string, isShared: boolean): Promise<boolean> {
     if (isMockMode || !supabase) {
       return dbMockService.toggleDocumentShare(documentId, isShared);
     }
-    return toggleDocumentShareAction({ documentId, isShared });
+    return handleAction(toggleDocumentShareAction({ documentId, isShared }));
   },
 
   // -----------------------------------------------------------------------
@@ -156,28 +164,28 @@ export const dbService = {
     if (isMockMode || !supabase) {
       return dbMockService.submitClientRequest(caseId, hearingId, userId, requestType, title, description);
     }
-    return submitClientRequestAction({ caseId, hearingId, userId, requestType, title, description });
+    return handleAction(submitClientRequestAction({ caseId, hearingId, userId, requestType, title, description }));
   },
 
   async updateRequestStatus(requestId: string, status: 'approved' | 'rejected'): Promise<boolean> {
     if (isMockMode || !supabase) {
       return dbMockService.updateRequestStatus(requestId, status);
     }
-    return updateRequestStatusAction({ requestId, status });
+    return handleAction(updateRequestStatusAction({ requestId, status }));
   },
 
   async updatePanel(panelId: string, name: string, dayOfWeek: number): Promise<boolean> {
     if (isMockMode || !supabase) {
       return dbMockService.updatePanel(panelId, name, dayOfWeek);
     }
-    return updatePanelAction({ panelId, name, dayOfWeek });
+    return handleAction(updatePanelAction({ panelId, name, dayOfWeek }));
   },
 
   async createPanel(name: string, dayOfWeek: number): Promise<Panel> {
     if (isMockMode || !supabase) {
       return dbMockService.createPanel(name, dayOfWeek);
     }
-    return createPanelAction({ name, dayOfWeek });
+    return handleAction(createPanelAction({ name, dayOfWeek }));
   },
 
   async getNextCaseSerialNumber(): Promise<string> {
@@ -199,12 +207,12 @@ export const dbService = {
     if (isMockMode || !supabase) {
       return dbMockService.createProfile(profile);
     }
-    return createProfileAction({
+    return handleAction(createProfileAction({
       full_name: profile.full_name,
       email: profile.email,
       phone: profile.phone || '',
       address: profile.address || ''
-    });
+    }));
   },
 
   async getMessages(userId: string): Promise<DirectMessage[]> {
@@ -218,7 +226,7 @@ export const dbService = {
     if (isMockMode || !supabase) {
       return dbMockService.sendMessage(senderId, recipientId, title, content, caseId);
     }
-    return sendMessageAction({ senderId, recipientId, title, content, caseId });
+    return handleAction(sendMessageAction({ senderId, recipientId, title, content, caseId }));
   },
 
   async uploadCaseDocument(
@@ -232,14 +240,14 @@ export const dbService = {
     if (isMockMode || !supabase) {
       return dbMockService.uploadCaseDocument(caseId, userId, documentType, fileName, filePath, folderType);
     }
-    return uploadCaseDocumentAction({ caseId, userId, documentType, fileName, filePath, folderType: folderType || 'General' });
+    return handleAction(uploadCaseDocumentAction({ caseId, userId, documentType, fileName, filePath, folderType: folderType || 'General' }));
   },
 
   async deleteProfile(userId: string): Promise<boolean> {
     if (isMockMode || !supabase) {
       return dbMockService.deleteProfile(userId);
     }
-    return deleteProfileAction({ userId });
+    return handleAction(deleteProfileAction({ userId }));
   },
 
   async getDocumentRequests(userId?: string): Promise<DocumentRequest[]> {
@@ -253,20 +261,20 @@ export const dbService = {
     if (isMockMode || !supabase) {
       return dbMockService.createDocumentRequest(caseId, requestedTo, title, description);
     }
-    return createDocumentRequestAction({ caseId, requestedTo, title, description });
+    return handleAction(createDocumentRequestAction({ caseId, requestedTo, title, description }));
   },
 
   async updateDocumentRequestStatus(requestId: string, status: 'pending' | 'completed'): Promise<boolean> {
     if (isMockMode || !supabase) {
       return dbMockService.updateDocumentRequestStatus(requestId, status);
     }
-    return updateDocumentRequestStatusAction({ requestId, status });
+    return handleAction(updateDocumentRequestStatusAction({ requestId, status }));
   },
 
   async moveDocument(documentId: string, folderType: 'General' | 'Plaintiff_Docs' | 'Defendant_Docs'): Promise<boolean> {
     if (isMockMode || !supabase) {
       return dbMockService.moveDocument(documentId, folderType);
     }
-    return moveDocumentAction({ documentId, folderType });
+    return handleAction(moveDocumentAction({ documentId, folderType }));
   }
 };

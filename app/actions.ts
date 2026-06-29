@@ -7,6 +7,19 @@ import { dbSupabaseService } from '../lib/services/dbSupabaseService';
 import { DocumentType } from '../types';
 
 // =========================================================================
+// פונקציית עזר לטיפול מאובטח בשגיאות (מונעת ערפול של Next.js בייצור)
+// =========================================================================
+async function safeAction<T>(fn: () => Promise<T>): Promise<{ success: boolean; data?: T; error?: string }> {
+  try {
+    const res = await fn();
+    return { success: true, data: res };
+  } catch (err: any) {
+    console.error("Server Action Error:", err);
+    return { success: false, error: err.message || String(err) };
+  }
+}
+
+// =========================================================================
 // סכמות אימות קלט (Zod Schemas)
 // =========================================================================
 
@@ -18,32 +31,32 @@ const litigantSchema = z.object({
 });
 
 const createCaseSchema = z.object({
-  caseNumber: z.string().min(1, "מספר סידורי הוא שדה חובה"),
-  title: z.string().min(1, "נושא התיק הוא שדה חובה"),
+  caseNumber: z.string().min(1, "מספר תיק הוא שדה חובה"),
+  title: z.string().min(1, "כותרת התיק היא שדה חובה"),
   panelId: z.string().uuid("הרכב דיינים לא תקין"),
-  plaintiff: litigantSchema.optional(),
+  plaintiff: litigantSchema,
   defendant: litigantSchema.optional()
 });
 
 const scheduleHearingSchema = z.object({
-  caseId: z.string().uuid("תיק לא תקין"),
-  panelId: z.string().uuid("הרכב לא תקין"),
-  dateStr: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "תאריך לא תקין"),
-  timeStr: z.string().regex(/^\d{2}:\d{2}$/, "שעה לא תקינה")
+  caseId: z.string().uuid("מזהה תיק לא תקין"),
+  panelId: z.string().uuid("מזהה הרכב לא תקין"),
+  dateStr: z.string(),
+  timeStr: z.string()
 });
 
 const toggleDocumentShareSchema = z.object({
-  documentId: z.string().uuid("מסמך לא תקין"),
+  documentId: z.string().uuid("מזהה מסמך לא תקין"),
   isShared: z.boolean()
 });
 
 const uploadDocumentSchema = z.object({
   hearingId: z.string().uuid("דיון לא תקין"),
   userId: z.string().uuid("משתמש לא תקין"),
-  documentType: z.enum(['plaintiff', 'defendant', 'secretariat'] as const),
-  fileName: z.string().min(1, "שם הקובץ לא תקין"),
+  documentType: z.enum(['plaintiff', 'defendant', 'secretariat']),
+  fileName: z.string(),
   fileBlobMockUrl: z.string().optional(),
-  folderType: z.enum(['General', 'Plaintiff_Docs', 'Defendant_Docs'] as const).optional().default('General')
+  folderType: z.enum(['General', 'Plaintiff_Docs', 'Defendant_Docs']).optional().default('General')
 });
 
 const updateRequestStatusSchema = z.object({
@@ -69,75 +82,41 @@ const submitClientRequestSchema = z.object({
   description: z.string().min(1, "פירוט הבקשה הוא שדה חובה")
 });
 
-// =========================================================================
-// מימוש ה-Server Actions
-// =========================================================================
+const createProfileSchema = z.object({
+  full_name: z.string().min(1, "שם מלא הוא שדה חובה"),
+  email: z.string().email("כתובת אימייל לא תקינה"),
+  phone: z.string().optional().default(''),
+  address: z.string().optional().default('')
+});
 
-export async function createCaseAction(data: z.infer<typeof createCaseSchema>) {
-  const validated = createCaseSchema.parse(data);
-  const supabase = await createClient();
-  
-  // בדיקת הרשאות מנהל
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-  
-  return await dbSupabaseService.createCase(
-    supabase,
-    validated.caseNumber,
-    validated.title,
-    validated.panelId,
-    validated.plaintiff,
-    validated.defendant
-  );
-}
+const sendMessageSchema = z.object({
+  senderId: z.string().uuid("שולח לא תקין"),
+  recipientId: z.string().uuid("מקבל לא תקין"),
+  title: z.string().min(1, "נושא הודעה הוא שדה חובה"),
+  content: z.string().min(1, "תוכן הודעה הוא שדה חובה"),
+  caseId: z.string().uuid().optional()
+});
 
-export async function scheduleHearingAction(data: z.infer<typeof scheduleHearingSchema>) {
-  const validated = scheduleHearingSchema.parse(data);
-  const supabase = await createClient();
-  
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
+const deleteProfileSchema = z.object({
+  userId: z.string().uuid("מזהה משתמש לא תקין")
+});
 
-  return await dbSupabaseService.scheduleHearing(
-    supabase,
-    validated.caseId,
-    validated.panelId,
-    validated.dateStr,
-    validated.timeStr
-  );
-}
+const createDocumentRequestSchema = z.object({
+  caseId: z.string().uuid("מזהה תיק לא תקין"),
+  requestedTo: z.string().uuid("מזהה משתמש לא תקין"),
+  title: z.string().min(1, "כותרת הבקשה היא שדה חובה"),
+  description: z.string().optional()
+});
 
-export async function toggleDocumentShareAction(data: z.infer<typeof toggleDocumentShareSchema>) {
-  const validated = toggleDocumentShareSchema.parse(data);
-  const supabase = await createClient();
+const updateDocumentRequestStatusSchema = z.object({
+  requestId: z.string().uuid("מזהה בקשה לא תקין"),
+  status: z.enum(['pending', 'completed'])
+});
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  return await dbSupabaseService.toggleDocumentShare(
-    supabase,
-    validated.documentId,
-    validated.isShared
-  );
-}
-
-export async function uploadDocumentAction(data: z.infer<typeof uploadDocumentSchema>) {
-  const validated = uploadDocumentSchema.parse(data);
-  const supabase = await createClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  return await dbSupabaseService.uploadDocument(
-    supabase,
-    validated.hearingId,
-    validated.userId,
-    validated.documentType as DocumentType,
-    validated.fileName,
-    validated.fileBlobMockUrl,
-    validated.folderType
-  );
-}
+const moveDocumentSchema = z.object({
+  documentId: z.string().uuid("מזהה מסמך לא תקין"),
+  folderType: z.enum(['General', 'Plaintiff_Docs', 'Defendant_Docs'])
+});
 
 const uploadCaseDocumentSchema = z.object({
   caseId: z.string().uuid(),
@@ -148,198 +127,246 @@ const uploadCaseDocumentSchema = z.object({
   folderType: z.enum(['General', 'Plaintiff_Docs', 'Defendant_Docs']).optional().default('General')
 });
 
+// =========================================================================
+// מימוש ה-Server Actions
+// =========================================================================
+
+export async function createCaseAction(data: z.infer<typeof createCaseSchema>) {
+  return safeAction(async () => {
+    const validated = createCaseSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
+    
+    return await dbSupabaseService.createCase(
+      supabase,
+      validated.caseNumber,
+      validated.title,
+      validated.panelId,
+      validated.plaintiff,
+      validated.defendant
+    );
+  });
+}
+
+export async function scheduleHearingAction(data: z.infer<typeof scheduleHearingSchema>) {
+  return safeAction(async () => {
+    const validated = scheduleHearingSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
+
+    return await dbSupabaseService.scheduleHearing(
+      supabase,
+      validated.caseId,
+      validated.panelId,
+      validated.dateStr,
+      validated.timeStr
+    );
+  });
+}
+
+export async function toggleDocumentShareAction(data: z.infer<typeof toggleDocumentShareSchema>) {
+  return safeAction(async () => {
+    const validated = toggleDocumentShareSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
+
+    return await dbSupabaseService.toggleDocumentShare(
+      supabase,
+      validated.documentId,
+      validated.isShared
+    );
+  });
+}
+
+export async function uploadDocumentAction(data: z.infer<typeof uploadDocumentSchema>) {
+  return safeAction(async () => {
+    const validated = uploadDocumentSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
+
+    return await dbSupabaseService.uploadDocument(
+      supabase,
+      validated.hearingId,
+      validated.userId,
+      validated.documentType as any,
+      validated.fileName,
+      validated.fileBlobMockUrl,
+      validated.folderType
+    );
+  });
+}
+
 export async function uploadCaseDocumentAction(data: z.infer<typeof uploadCaseDocumentSchema>) {
-  const validated = uploadCaseDocumentSchema.parse(data);
-  const supabase = await createClient();
+  return safeAction(async () => {
+    const validated = uploadCaseDocumentSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  return await dbSupabaseService.uploadCaseDocument(
-    supabase,
-    validated.caseId,
-    validated.userId,
-    validated.documentType as DocumentType,
-    validated.fileName,
-    validated.filePath,
-    validated.folderType
-  );
+    return await dbSupabaseService.uploadCaseDocument(
+      supabase,
+      validated.caseId,
+      validated.userId,
+      validated.documentType as any,
+      validated.fileName,
+      validated.filePath,
+      validated.folderType
+    );
+  });
 }
 
 export async function updateRequestStatusAction(data: z.infer<typeof updateRequestStatusSchema>) {
-  const validated = updateRequestStatusSchema.parse(data);
-  const supabase = await createClient();
+  return safeAction(async () => {
+    const validated = updateRequestStatusSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  return await dbSupabaseService.updateRequestStatus(
-    supabase,
-    validated.requestId,
-    validated.status
-  );
+    return await dbSupabaseService.updateRequestStatus(
+      supabase,
+      validated.requestId,
+      validated.status
+    );
+  });
 }
 
 export async function createPanelAction(data: z.infer<typeof panelSchema>) {
-  const validated = panelSchema.parse(data);
-  const supabase = await createClient();
+  return safeAction(async () => {
+    const validated = panelSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  return await dbSupabaseService.createPanel(
-    supabase,
-    validated.name,
-    validated.dayOfWeek
-  );
+    return await dbSupabaseService.createPanel(
+      supabase,
+      validated.name,
+      validated.dayOfWeek
+    );
+  });
 }
 
 export async function updatePanelAction(data: z.infer<typeof updatePanelSchema>) {
-  const validated = updatePanelSchema.parse(data);
-  const supabase = await createClient();
+  return safeAction(async () => {
+    const validated = updatePanelSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  return await dbSupabaseService.updatePanel(
-    supabase,
-    validated.panelId,
-    validated.name,
-    validated.dayOfWeek
-  );
+    return await dbSupabaseService.updatePanel(
+      supabase,
+      validated.panelId,
+      validated.name,
+      validated.dayOfWeek
+    );
+  });
 }
 
 export async function submitClientRequestAction(data: z.infer<typeof submitClientRequestSchema>) {
-  const validated = submitClientRequestSchema.parse(data);
-  const supabase = await createClient();
+  return safeAction(async () => {
+    const validated = submitClientRequestSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  return await dbSupabaseService.submitClientRequest(
-    supabase,
-    validated.caseId,
-    validated.hearingId,
-    validated.userId,
-    validated.requestType,
-    validated.title,
-    validated.description
-  );
+    return await dbSupabaseService.submitClientRequest(
+      supabase,
+      validated.caseId,
+      validated.hearingId,
+      validated.userId,
+      validated.requestType,
+      validated.title,
+      validated.description
+    );
+  });
 }
-
-const createProfileSchema = z.object({
-  full_name: z.string().min(1, "שם מלא הוא שדה חובה"),
-  email: z.string().email("כתובת אימייל לא תקינה"),
-  phone: z.string().optional().default(''),
-  address: z.string().optional().default('')
-});
 
 export async function createProfileAction(data: z.infer<typeof createProfileSchema>) {
-  const validated = createProfileSchema.parse(data);
-  const supabase = await createClient();
-  
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
+  return safeAction(async () => {
+    const validated = createProfileSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
 
-  return await dbSupabaseService.createProfile(supabase, validated);
+    return await dbSupabaseService.createProfile(supabase, validated);
+  });
 }
-
-const sendMessageSchema = z.object({
-  senderId: z.string().uuid("שולח לא תקין"),
-  recipientId: z.string().uuid("מקבל לא תקין"),
-  title: z.string().min(1, "נושא הודעה הוא שדה חובה"),
-  content: z.string().min(1, "תוכן הודעה הוא שדה חובה"),
-  caseId: z.string().uuid().optional()
-});
 
 export async function sendMessageAction(data: z.infer<typeof sendMessageSchema>) {
-  const validated = sendMessageSchema.parse(data);
-  const supabase = await createClient();
+  return safeAction(async () => {
+    const validated = sendMessageSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  return await dbSupabaseService.sendMessage(
-    supabase,
-    validated.senderId,
-    validated.recipientId,
-    validated.title,
-    validated.content,
-    validated.caseId
-  );
+    return await dbSupabaseService.sendMessage(
+      supabase,
+      validated.senderId,
+      validated.recipientId,
+      validated.title,
+      validated.content,
+      validated.caseId
+    );
+  });
 }
-
-const deleteProfileSchema = z.object({
-  userId: z.string().uuid("מזהה משתמש לא תקין")
-});
 
 export async function deleteProfileAction(data: z.infer<typeof deleteProfileSchema>) {
-  const validated = deleteProfileSchema.parse(data);
-  const supabase = await createClient();
+  return safeAction(async () => {
+    const validated = deleteProfileSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  return await dbSupabaseService.deleteProfile(supabase, validated.userId);
+    return await dbSupabaseService.deleteProfile(supabase, validated.userId);
+  });
 }
-
-const createDocumentRequestSchema = z.object({
-  caseId: z.string().uuid("מזהה תיק לא תקין"),
-  requestedTo: z.string().uuid("מזהה משתמש לא תקין"),
-  title: z.string().min(1, "כותרת הבקשה היא שדה חובה"),
-  description: z.string().optional()
-});
 
 export async function createDocumentRequestAction(data: z.infer<typeof createDocumentRequestSchema>) {
-  const validated = createDocumentRequestSchema.parse(data);
-  const supabase = await createClient();
+  return safeAction(async () => {
+    const validated = createDocumentRequestSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  return await dbSupabaseService.createDocumentRequest(
-    supabase,
-    validated.caseId,
-    validated.requestedTo,
-    validated.title,
-    validated.description
-  );
+    return await dbSupabaseService.createDocumentRequest(
+      supabase,
+      validated.caseId,
+      validated.requestedTo,
+      validated.title,
+      validated.description
+    );
+  });
 }
-
-const updateDocumentRequestStatusSchema = z.object({
-  requestId: z.string().uuid("מזהה בקשה לא תקין"),
-  status: z.enum(['pending', 'completed'])
-});
 
 export async function updateDocumentRequestStatusAction(data: z.infer<typeof updateDocumentRequestStatusSchema>) {
-  const validated = updateDocumentRequestStatusSchema.parse(data);
-  const supabase = await createClient();
+  return safeAction(async () => {
+    const validated = updateDocumentRequestStatusSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  return await dbSupabaseService.updateDocumentRequestStatus(
-    supabase,
-    validated.requestId,
-    validated.status
-  );
+    return await dbSupabaseService.updateDocumentRequestStatus(
+      supabase,
+      validated.requestId,
+      validated.status
+    );
+  });
 }
 
-const moveDocumentSchema = z.object({
-  documentId: z.string().uuid("מזהה מסמך לא תקין"),
-  folderType: z.enum(['General', 'Plaintiff_Docs', 'Defendant_Docs'])
-});
-
 export async function moveDocumentAction(data: z.infer<typeof moveDocumentSchema>) {
-  const validated = moveDocumentSchema.parse(data);
-  const supabase = await createClient();
+  return safeAction(async () => {
+    const validated = moveDocumentSchema.parse(data);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
-
-  return await dbSupabaseService.moveDocument(
-    supabase,
-    validated.documentId,
-    validated.folderType
-  );
+    return await dbSupabaseService.moveDocument(
+      supabase,
+      validated.documentId,
+      validated.folderType
+    );
+  });
 }
