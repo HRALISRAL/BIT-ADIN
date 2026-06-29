@@ -10,7 +10,7 @@ import {
   Users, Inbox, Download, Upload, AlertCircle, Search, Edit, FolderPlus, Settings, Mail
 } from "lucide-react";
 import { dbService } from "./../../../lib/services/dbService";
-import { Panel, Case, Hearing, Document, ClientRequest, UserProfile, PartyRole } from "../../../types";
+import { Panel, Case, Hearing, Document, ClientRequest, UserProfile, PartyRole, DocumentRequest } from "../../../types";
 import { isMockMode, supabase } from "./../../../lib/supabase/client";
 
 export default function SecretariatDashboard() {
@@ -80,6 +80,18 @@ export default function SecretariatDashboard() {
   const [panelError, setPanelError] = useState("");
   const [panelSuccess, setPanelSuccess] = useState("");
 
+  // דרישת מסמכים ומסמכי תיק
+  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [showDocRequestModal, setShowDocRequestModal] = useState(false);
+  const [docRequestCase, setDocRequestCase] = useState<Case | null>(null);
+  const [docRequestTo, setDocRequestTo] = useState("");
+  const [docRequestTitle, setDocRequestTitle] = useState("");
+  const [docRequestDesc, setDocRequestDesc] = useState("");
+  const [docRequestError, setDocRequestError] = useState("");
+  const [docRequestSuccess, setDocRequestSuccess] = useState("");
+  const [documentRequests, setDocumentRequests] = useState<DocumentRequest[]>([]);
+  const [uploadFolderType, setUploadFolderType] = useState<'General' | 'Plaintiff_Docs' | 'Defendant_Docs'>('General');
+
   // הגדרות בית הדין
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsCourtName, setSettingsCourtName] = useState("");
@@ -102,18 +114,20 @@ export default function SecretariatDashboard() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [pData, cData, hData, rData, profsData] = await Promise.all([
+      const [pData, cData, hData, rData, profsData, docReqsData] = await Promise.all([
         dbService.getPanels(),
         dbService.getCases(),
         dbService.getHearings(),
         dbService.getClientRequests(),
-        dbService.getProfiles()
+        dbService.getProfiles(),
+        dbService.getDocumentRequests()
       ]);
       setPanels(pData);
       setCases(cData);
       setHearings(hData);
       setRequests(rData);
       setProfiles(profsData);
+      setDocumentRequests(docReqsData);
       setCourtName(dbService.getBetDinName());
       setSettingsCourtName(dbService.getBetDinName());
       
@@ -408,8 +422,76 @@ export default function SecretariatDashboard() {
     setShowSettingsModal(false);
   };
 
+  const handleOpenCaseDocs = async (caseItem: Case) => {
+    setSelectedCase(caseItem);
+    setSelectedHearing(null);
+    setShowDocModal(true);
+    try {
+      const docs = await dbService.getCaseDocuments(caseItem.id);
+      setHearingDocs(docs);
+    } catch (err) {
+      console.error("Error loading case documents:", err);
+    }
+  };
+
+  const handleOpenDocRequest = (caseItem: Case) => {
+    setDocRequestCase(caseItem);
+    setDocRequestTitle("");
+    setDocRequestDesc("");
+    setDocRequestError("");
+    setDocRequestSuccess("");
+    const plaintiff = caseItem.participants?.find(p => p.party_role === 'plaintiff');
+    if (plaintiff) {
+      setDocRequestTo(plaintiff.user_id);
+    } else {
+      setDocRequestTo("");
+    }
+    setShowDocRequestModal(true);
+  };
+
+  const handleDocRequestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!docRequestCase || !docRequestTo || !docRequestTitle.trim()) {
+      setDocRequestError("אנא מלא את כל השדות החובה");
+      return;
+    }
+    try {
+      setDocRequestError("");
+      setDocRequestSuccess("");
+      await dbService.createDocumentRequest(
+        docRequestCase.id,
+        docRequestTo,
+        docRequestTitle.trim(),
+        docRequestDesc.trim() || undefined
+      );
+      setDocRequestSuccess("דרישת המסמך נשלחה בהצלחה והופיעה באזור האישי של המשתמש");
+      setTimeout(() => {
+        setShowDocRequestModal(false);
+        loadData();
+      }, 1500);
+    } catch (err: any) {
+      setDocRequestError("שגיאה בשליחת דרישת המסמך: " + err.message);
+    }
+  };
+
+  const handleMoveDoc = async (docId: string, folderType: 'General' | 'Plaintiff_Docs' | 'Defendant_Docs') => {
+    try {
+      await dbService.moveDocument(docId, folderType);
+      if (selectedCase) {
+        const docs = await dbService.getCaseDocuments(selectedCase.id);
+        setHearingDocs(docs);
+      } else if (selectedHearing) {
+        const docs = await dbService.getDocuments(selectedHearing.id, "sec-1", "secretariat");
+        setHearingDocs(docs);
+      }
+    } catch (err) {
+      console.error("Error moving document:", err);
+    }
+  };
+
   const handleOpenDocs = async (hearing: Hearing) => {
     setSelectedHearing(hearing);
+    setSelectedCase(null);
     setShowDocModal(true);
     try {
       const docs = await dbService.getDocuments(hearing.id, "sec-1", "secretariat");
@@ -433,7 +515,7 @@ export default function SecretariatDashboard() {
 
   const handleSecUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedHearing || !uploadFileName.trim()) return;
+    if ((!selectedHearing && !selectedCase) || !uploadFileName.trim()) return;
     
     try {
       setUploading(true);
@@ -448,7 +530,8 @@ export default function SecretariatDashboard() {
         }
         const fileExt = selectedFileObject.name.split('.').pop();
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-        const storagePath = `${uId}/${fileName}`;
+        const activeCaseId = selectedCase ? selectedCase.id : selectedHearing!.case_id;
+        const storagePath = `cases/${activeCaseId}/${uploadFolderType}/${fileName}`;
         
         const { data: storageData, error: storageErr } = await supabase.storage
           .from('court-documents')
@@ -458,19 +541,33 @@ export default function SecretariatDashboard() {
         filePath = storagePath;
       }
       
-      await dbService.uploadDocument(
-        selectedHearing.id,
-        uId,
-        "secretariat",
-        uploadFileName.trim(),
-        filePath
-      );
+      if (selectedHearing) {
+        await dbService.uploadDocument(
+          selectedHearing.id,
+          uId,
+          "secretariat",
+          uploadFileName.trim(),
+          filePath,
+          uploadFolderType
+        );
+        const docs = await dbService.getDocuments(selectedHearing.id, uId, "secretariat");
+        setHearingDocs(docs);
+      } else if (selectedCase) {
+        await dbService.uploadCaseDocument(
+          selectedCase.id,
+          uId,
+          "secretariat",
+          uploadFileName.trim(),
+          filePath,
+          uploadFolderType
+        );
+        const docs = await dbService.getCaseDocuments(selectedCase.id);
+        setHearingDocs(docs);
+      }
+      
       setUploadFileName("");
       setSelectedFileObject(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      
-      const docs = await dbService.getDocuments(selectedHearing.id, uId, "secretariat");
-      setHearingDocs(docs);
     } catch (err: any) {
       console.error("Failed to upload document:", err);
       alert("שגיאה בהעלאת הקובץ: " + (err.message || err));
@@ -819,12 +916,13 @@ export default function SecretariatDashboard() {
                       <th className="p-4">צד נתבע</th>
                       <th className="p-4">סטטוס</th>
                       <th className="p-4">תאריך פתיחה</th>
+                      <th className="p-4 text-center">פעולות</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#faf6ee]">
                     {filteredCases.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-slate-400 font-medium">
+                        <td colSpan={8} className="p-8 text-center text-slate-400 font-medium">
                           לא נמצאו תיקים העונים לחיפוש הנוכחי
                         </td>
                       </tr>
@@ -856,6 +954,26 @@ export default function SecretariatDashboard() {
                               </span>
                             </td>
                             <td className="p-4 text-[#5c4a3c]">{new Date(c.created_at).toLocaleDateString('he-IL')}</td>
+                            <td className="p-4 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => handleOpenCaseDocs(c)}
+                                  className="px-2.5 py-1 rounded bg-[#faf6ee] border border-[#eadeca] text-[#8b5a2b] hover:bg-[#f3eedf] transition-all flex items-center gap-1 font-bold text-[10px] cursor-pointer"
+                                  title="ניהול תיקיות מסמכים"
+                                >
+                                  <FileText className="h-3 w-3 text-[#a27b18]" />
+                                  <span>תיקיות מסמכים</span>
+                                </button>
+                                <button
+                                  onClick={() => handleOpenDocRequest(c)}
+                                  className="px-2.5 py-1 rounded bg-[#faf6ee] border border-[#eadeca] text-[#8b5a2b] hover:bg-[#f3eedf] transition-all flex items-center gap-1 font-bold text-[10px] cursor-pointer"
+                                  title="דרישת מסמכים מבעל דין"
+                                >
+                                  <Mail className="h-3 w-3 text-[#a27b18]" />
+                                  <span>דרישת מסמך</span>
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         );
                       })
@@ -1609,23 +1727,25 @@ export default function SecretariatDashboard() {
       {/* =========================================================================
           מודל ניהול חומרים ומסמכים (Documents Explorer Modal)
           ========================================================================= */}
-      {showDocModal && selectedHearing && (
+      {showDocModal && (selectedHearing || selectedCase) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/45 backdrop-blur-sm">
-          <div className="parchment-panel w-full max-w-3xl p-6 border-[#eadeca] shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[85vh] torah-card">
+          <div className="parchment-panel w-full max-w-4xl p-6 border-[#eadeca] shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh] torah-card">
             
             <div className="flex items-center justify-between border-b border-[#eadeca] pb-3 mb-4 flex-shrink-0">
               <div>
                 <h3 className="text-lg font-bold text-serif text-[#2d1e10]">
-                  ניהול חומרי הדיון: {selectedHearing.case_title}
+                  ניהול חומרי התיק: {selectedCase ? selectedCase.title : selectedHearing?.case_title}
                 </h3>
                 <p className="text-[11px] text-[#5c4a3c] mt-0.5 font-semibold">
-                  תיק: {selectedHearing.case_number} | הרכב: {selectedHearing.panel_name} | תאריך: {selectedHearing.hearing_date}
+                  תיק: {selectedCase ? selectedCase.case_number : selectedHearing?.case_number} | הרכב: {selectedCase ? selectedCase.panel_name : selectedHearing?.panel_name}
+                  {selectedHearing && ` | תאריך דיון: ${selectedHearing.hearing_date}`}
                 </p>
               </div>
               <button
                 onClick={() => {
                   setShowDocModal(false);
                   setSelectedHearing(null);
+                  setSelectedCase(null);
                   setHearingDocs([]);
                 }}
                 className="text-[#5c4a3c] hover:text-[#2d1e10] text-lg cursor-pointer"
@@ -1639,7 +1759,7 @@ export default function SecretariatDashboard() {
               <div className="p-4 rounded-xl bg-[#faf6ee]/60 border border-[#eadeca] space-y-3">
                 <h4 className="font-bold text-[#2d1e10] text-xs flex items-center gap-1.5">
                   <Upload className="h-4 w-4 text-[#8b5a2b]" />
-                  <span>העלאת החלטה / פרוטוקול בית הדין</span>
+                  <span>העלאת מסמך חדש לתיק</span>
                 </h4>
                 <form onSubmit={handleSecUpload} className="space-y-3">
                   <input
@@ -1657,187 +1777,210 @@ export default function SecretariatDashboard() {
                     id="sec-file-upload"
                   />
 
-                  <div className="flex flex-col gap-3">
-                    <input
-                      type="text"
-                      placeholder="שם או כותרת המסמך (לדוגמה: פרוטוקול דיון מיום 14.6)"
-                      value={uploadFileName}
-                      onChange={(e) => setUploadFileName(e.target.value)}
-                      className="w-full bg-white border border-[#eadeca] rounded-lg px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
-                      required
-                    />
-
-                    <div className="flex gap-2 items-center">
-                      <label
-                        htmlFor="sec-file-upload"
-                        className="flex-1 flex items-center justify-center border border-dashed border-[#eadeca] hover:border-[#cda851] rounded-lg p-2.5 bg-white cursor-pointer transition-all gap-1.5 text-[11px] font-bold text-[#5c4a3c] truncate"
-                      >
-                        <Upload className="h-3.5 w-3.5 text-[#8b5a2b]" />
-                        <span className="truncate">
-                          {selectedFileObject ? `קובץ: ${selectedFileObject.name}` : "בחר קובץ מהמחשב"}
-                        </span>
-                      </label>
-
-                      <button
-                        type="submit"
-                        disabled={uploading || !uploadFileName.trim() || (!isMockMode && !selectedFileObject)}
-                        className="px-4 py-2.5 rounded-lg gold-button font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 text-xs flex-shrink-0"
-                      >
-                        <Plus className="h-3 w-3" />
-                        <span>{uploading ? 'מעלה...' : 'העלה'}</span>
-                      </button>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[#2d1e10] mb-1">כותרת או שם המסמך:</label>
+                      <input
+                        type="text"
+                        placeholder="לדוגמה: יפוי כח תובע, כתב הגנה"
+                        value={uploadFileName}
+                        onChange={(e) => setUploadFileName(e.target.value)}
+                        className="w-full bg-white border border-[#eadeca] rounded-lg px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
+                        required
+                      />
                     </div>
+
+                    <div>
+                      <label className="block text-[#2d1e10] mb-1">העלה לתיקיית יעד:</label>
+                      <select
+                        value={uploadFolderType}
+                        onChange={(e) => setUploadFolderType(e.target.value as any)}
+                        className="w-full bg-white border border-[#eadeca] rounded-lg px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
+                      >
+                        <option value="General">כללי (General) - נגיש לכולם</option>
+                        <option value="Plaintiff_Docs">מסמכי תובע (Plaintiff_Docs) - מוסתר מהנתבע</option>
+                        <option value="Defendant_Docs">מסמכי נתבע (Defendant_Docs) - מוסתר מהתובע</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 items-center pt-2">
+                    <label
+                      htmlFor="sec-file-upload"
+                      className="flex-1 flex items-center justify-center border border-dashed border-[#eadeca] hover:border-[#cda851] rounded-lg p-2.5 bg-white cursor-pointer transition-all gap-1.5 text-[11px] font-bold text-[#5c4a3c] truncate"
+                    >
+                      <Upload className="h-3.5 w-3.5 text-[#8b5a2b]" />
+                      <span className="truncate">
+                        {selectedFileObject ? `קובץ: ${selectedFileObject.name}` : "בחר קובץ מהמחשב"}
+                      </span>
+                    </label>
+
+                    <button
+                      type="submit"
+                      disabled={uploading || !uploadFileName.trim() || (!isMockMode && !selectedFileObject)}
+                      className="px-4 py-2.5 rounded-lg gold-button font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 text-xs flex-shrink-0"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span>{uploading ? 'מעלה...' : 'העלה לתיקייה'}</span>
+                    </button>
                   </div>
                 </form>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 
-                <div className="space-y-3">
-                  <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 text-[11px] uppercase tracking-wider text-serif">
-                    תיקיית מסמכי תובע
+                {/* תיקיית Plaintiff_Docs */}
+                <div className="space-y-3 p-3 rounded-xl bg-amber-50/15 border border-[#eadeca]/80">
+                  <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 text-[12px] text-serif flex items-center justify-between">
+                    <span>Plaintiff_Docs</span>
+                    <span className="bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.5 rounded font-black">תובע בלבד</span>
                   </h4>
-                  <div className="space-y-2">
-                    {hearingDocs.filter(d => d.document_type === 'plaintiff').length === 0 ? (
-                      <p className="text-slate-400 italic py-2 font-normal">לא הועלו מסמכים</p>
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                    {hearingDocs.filter(d => d.folder_type === 'Plaintiff_Docs').length === 0 ? (
+                      <p className="text-slate-400 italic py-2 font-normal text-center">אין מסמכים</p>
                     ) : (
-                      hearingDocs.filter(d => d.document_type === 'plaintiff').map(d => (
-                        <div key={d.id} className="p-3 rounded-lg bg-white border border-[#eadeca] flex flex-col justify-between gap-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <strong className="text-[#2d1e10] block truncate text-serif" title={d.file_name}>
-                                {d.file_name}
-                              </strong>
-                              <span className="text-[10px] text-[#5c4a3c] font-medium">הועלה ע"י: {d.uploader_name}</span>
-                            </div>
-                            <a 
-                              href={d.file_path} 
-                              download 
-                              className="text-slate-500 hover:text-slate-900 p-1"
-                              title="הורד קובץ"
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                            </a>
-                          </div>
-
-                          <div className="pt-2 border-t border-[#faf6ee] flex items-center justify-between text-[10px]">
-                            <span className="text-[#5c4a3c] font-bold">שיתוף עם צד נתבע:</span>
-                            <button
-                              onClick={() => handleToggleShare(d.id, d.is_shared)}
-                              className="flex items-center gap-1 text-[#8b5a2b] hover:text-[#a27b18] font-bold transition-all cursor-pointer"
-                            >
-                              {d.is_shared ? (
-                                <>
-                                  <ToggleRight className="h-6 w-6 text-[#a27b18]" />
-                                  <span>משותף</span>
-                                </>
-                              ) : (
-                                <>
-                                  <ToggleLeft className="h-6 w-6 text-slate-300" />
-                                  <span className="text-slate-450">חסום</span>
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 text-[11px] uppercase tracking-wider text-serif">
-                    תיקיית מסמכי נתבע
-                  </h4>
-                  <div className="space-y-2">
-                    {hearingDocs.filter(d => d.document_type === 'defendant').length === 0 ? (
-                      <p className="text-slate-400 italic py-2 font-normal">לא הועלו מסמכים</p>
-                    ) : (
-                      hearingDocs.filter(d => d.document_type === 'defendant').map(d => (
-                        <div key={d.id} className="p-3 rounded-lg bg-white border border-[#eadeca] flex flex-col justify-between gap-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <strong className="text-[#2d1e10] block truncate text-serif" title={d.file_name}>
-                                {d.file_name}
-                              </strong>
-                              <span className="text-[10px] text-[#5c4a3c] font-medium">הועלה ע"י: {d.uploader_name}</span>
-                            </div>
-                            <a 
-                              href={d.file_path} 
-                              download 
-                              className="text-slate-500 hover:text-slate-900 p-1"
-                              title="הורד קובץ"
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                            </a>
-                          </div>
-
-                          <div className="pt-2 border-t border-[#faf6ee] flex items-center justify-between text-[10px]">
-                            <span className="text-[#5c4a3c] font-bold">שיתוף עם צד תובע:</span>
-                            <button
-                              onClick={() => handleToggleShare(d.id, d.is_shared)}
-                              className="flex items-center gap-1 text-[#8b5a2b] hover:text-[#a27b18] font-bold transition-all cursor-pointer"
-                            >
-                              {d.is_shared ? (
-                                <>
-                                  <ToggleRight className="h-6 w-6 text-[#a27b18]" />
-                                  <span>משותף</span>
-                                </>
-                              ) : (
-                                <>
-                                  <ToggleLeft className="h-6 w-6 text-slate-300" />
-                                  <span className="text-slate-450">חסום</span>
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-              </div>
-
-              <div className="space-y-2 pt-2">
-                <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 text-[11px] uppercase tracking-wider text-serif">
-                  החלטות ופרוטוקולים (משותף לשני הצדדים אוטומטית)
-                </h4>
-                <div className="space-y-2">
-                  {hearingDocs.filter(d => d.document_type === 'secretariat').length === 0 ? (
-                    <p className="text-slate-400 italic py-2 font-normal">טרם הועלו החלטות</p>
-                  ) : (
-                    hearingDocs.filter(d => d.document_type === 'secretariat').map(d => (
-                      <div key={d.id} className="p-3 rounded-lg bg-white border border-[#eadeca] flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-[#a27b18]" />
+                      hearingDocs.filter(d => d.folder_type === 'Plaintiff_Docs').map(d => (
+                        <div key={d.id} className="p-3 rounded-lg bg-white border border-[#eadeca] flex flex-col justify-between gap-3 shadow-sm">
                           <div>
-                            <strong className="text-[#2d1e10] block text-serif">{d.file_name}</strong>
-                            <span className="text-[10px] text-[#5c4a3c] font-medium">הועלה בתאריך: {new Date(d.created_at).toLocaleDateString('he-IL')}</span>
+                            <strong className="text-[#2d1e10] block truncate text-serif text-[11px]" title={d.file_name}>
+                              {d.file_name}
+                            </strong>
+                            <span className="text-[9px] text-[#5c4a3c] block font-medium mt-0.5">הועלה ע"י: {d.uploader_name}</span>
+                          </div>
+                          
+                          <div className="border-t border-[#faf6ee] pt-2 flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9px] text-slate-400">העבר לתיקייה:</span>
+                              <select
+                                value={d.folder_type || 'Plaintiff_Docs'}
+                                onChange={(e) => handleMoveDoc(d.id, e.target.value as any)}
+                                className="bg-[#faf6ee] border border-[#eadeca] rounded px-1.5 py-0.5 text-[9px] font-bold text-[#8b5a2b] focus:outline-none cursor-pointer"
+                              >
+                                <option value="General">כללי</option>
+                                <option value="Plaintiff_Docs">תובע</option>
+                                <option value="Defendant_Docs">נתבע</option>
+                              </select>
+                            </div>
+                            <a 
+                              href={d.file_path} 
+                              download 
+                              className="w-full py-1 text-center rounded bg-[#faf6ee] border border-[#eadeca] hover:bg-[#f3eedf] text-[#8b5a2b] font-bold text-[9px] flex items-center justify-center gap-1"
+                            >
+                              <Download className="h-2.5 w-2.5" />
+                              <span>הורדה</span>
+                            </a>
                           </div>
                         </div>
-                        <a 
-                          href={d.file_path} 
-                          download 
-                          className="px-3 py-1.5 rounded bg-[#faf6ee] border border-[#eadeca] hover:bg-[#f3eedf] text-[#8b5a2b] font-bold transition-all flex items-center gap-1"
-                        >
-                          <Download className="h-3 w-3" />
-                          <span>הורדה</span>
-                        </a>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
+
+                {/* תיקיית Defendant_Docs */}
+                <div className="space-y-3 p-3 rounded-xl bg-amber-50/15 border border-[#eadeca]/80">
+                  <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 text-[12px] text-serif flex items-center justify-between">
+                    <span>Defendant_Docs</span>
+                    <span className="bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.5 rounded font-black">נתבע בלבד</span>
+                  </h4>
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                    {hearingDocs.filter(d => d.folder_type === 'Defendant_Docs').length === 0 ? (
+                      <p className="text-slate-400 italic py-2 font-normal text-center">אין מסמכים</p>
+                    ) : (
+                      hearingDocs.filter(d => d.folder_type === 'Defendant_Docs').map(d => (
+                        <div key={d.id} className="p-3 rounded-lg bg-white border border-[#eadeca] flex flex-col justify-between gap-3 shadow-sm">
+                          <div>
+                            <strong className="text-[#2d1e10] block truncate text-serif text-[11px]" title={d.file_name}>
+                              {d.file_name}
+                            </strong>
+                            <span className="text-[9px] text-[#5c4a3c] block font-medium mt-0.5">הועלה ע"י: {d.uploader_name}</span>
+                          </div>
+                          
+                          <div className="border-t border-[#faf6ee] pt-2 flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9px] text-slate-400">העבר לתיקייה:</span>
+                              <select
+                                value={d.folder_type || 'Defendant_Docs'}
+                                onChange={(e) => handleMoveDoc(d.id, e.target.value as any)}
+                                className="bg-[#faf6ee] border border-[#eadeca] rounded px-1.5 py-0.5 text-[9px] font-bold text-[#8b5a2b] focus:outline-none cursor-pointer"
+                              >
+                                <option value="General">כללי</option>
+                                <option value="Plaintiff_Docs">תובע</option>
+                                <option value="Defendant_Docs">נתבע</option>
+                              </select>
+                            </div>
+                            <a 
+                              href={d.file_path} 
+                              download 
+                              className="w-full py-1 text-center rounded bg-[#faf6ee] border border-[#eadeca] hover:bg-[#f3eedf] text-[#8b5a2b] font-bold text-[9px] flex items-center justify-center gap-1"
+                            >
+                              <Download className="h-2.5 w-2.5" />
+                              <span>הורדה</span>
+                            </a>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* תיקיית General */}
+                <div className="space-y-3 p-3 rounded-xl bg-amber-50/15 border border-[#eadeca]/80">
+                  <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 text-[12px] text-serif flex items-center justify-between">
+                    <span>General</span>
+                    <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.5 rounded font-black">נגיש לכולם</span>
+                  </h4>
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                    {hearingDocs.filter(d => d.folder_type === 'General' || (!d.folder_type && d.document_type === 'secretariat')).length === 0 ? (
+                      <p className="text-slate-400 italic py-2 font-normal text-center">אין מסמכים</p>
+                    ) : (
+                      hearingDocs.filter(d => d.folder_type === 'General' || (!d.folder_type && d.document_type === 'secretariat')).map(d => (
+                        <div key={d.id} className="p-3 rounded-lg bg-white border border-[#eadeca] flex flex-col justify-between gap-3 shadow-sm">
+                          <div>
+                            <strong className="text-[#2d1e10] block truncate text-serif text-[11px]" title={d.file_name}>
+                              {d.file_name}
+                            </strong>
+                            <span className="text-[9px] text-[#5c4a3c] block font-medium mt-0.5">הועלה ע"י: {d.uploader_name}</span>
+                          </div>
+                          
+                          <div className="border-t border-[#faf6ee] pt-2 flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9px] text-slate-400">העבר לתיקייה:</span>
+                              <select
+                                value={d.folder_type || 'General'}
+                                onChange={(e) => handleMoveDoc(d.id, e.target.value as any)}
+                                className="bg-[#faf6ee] border border-[#eadeca] rounded px-1.5 py-0.5 text-[9px] font-bold text-[#8b5a2b] focus:outline-none cursor-pointer"
+                              >
+                                <option value="General">כללי</option>
+                                <option value="Plaintiff_Docs">תובע</option>
+                                <option value="Defendant_Docs">נתבע</option>
+                              </select>
+                            </div>
+                            <a 
+                              href={d.file_path} 
+                              download 
+                              className="w-full py-1 text-center rounded bg-[#faf6ee] border border-[#eadeca] hover:bg-[#f3eedf] text-[#8b5a2b] font-bold text-[9px] flex items-center justify-center gap-1"
+                            >
+                              <Download className="h-2.5 w-2.5" />
+                              <span>הורדה</span>
+                            </a>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
               </div>
 
             </div>
 
-            <div className="pt-3 border-t border-[#eadeca] flex justify-end flex-shrink-0">
+            <div className="pt-3 border-t border-[#eadeca] flex justify-end flex-shrink-0 animate-fade-in">
               <button
                 type="button"
                 onClick={() => {
                   setShowDocModal(false);
                   setSelectedHearing(null);
+                  setSelectedCase(null);
                   setHearingDocs([]);
                 }}
                 className="px-4 py-2 rounded-xl bg-[#faf6ee] border border-[#eadeca] text-[#5c4a3c] hover:bg-[#f3eedf] cursor-pointer font-bold"
@@ -2041,6 +2184,99 @@ export default function SecretariatDashboard() {
                   className="px-5 py-2 rounded-xl gold-button font-bold cursor-pointer"
                 >
                   שלח הודעה
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* מודל דרישת מסמכים */}
+      {showDocRequestModal && docRequestCase && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/40 backdrop-blur-sm animate-fade-in">
+          <div className="parchment-panel w-full max-w-md p-6 border-[#eadeca] shadow-2xl animate-in fade-in zoom-in duration-200 torah-card">
+            
+            <div className="flex items-center justify-between border-b border-[#eadeca] pb-3 mb-5">
+              <h3 className="text-lg font-bold text-serif text-[#2d1e10] flex items-center gap-2">
+                <Mail className="h-5 w-5 text-[#8b5a2b]" />
+                <span>דרישת מסמכים: תיק {docRequestCase.case_number}</span>
+              </h3>
+              <button
+                onClick={() => setShowDocRequestModal(false)}
+                className="text-[#5c4a3c] hover:text-[#2d1e10] text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleDocRequestSubmit} className="space-y-4 text-xs font-semibold">
+              <div>
+                <label className="block text-[#2d1e10] mb-1">בחר בעל דין (נמען הדרישה) *:</label>
+                <select
+                  value={docRequestTo}
+                  onChange={(e) => setDocRequestTo(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium"
+                  required
+                >
+                  <option value="">בחר בעל דין...</option>
+                  {docRequestCase.participants?.map(p => (
+                    <option key={p.user_id} value={p.user_id}>
+                      {p.full_name} ({p.party_role === 'plaintiff' ? 'תובע' : 'נתבע'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[#2d1e10] mb-1">מהו המסמך הנדרש? *:</label>
+                <input
+                  type="text"
+                  placeholder="לדוגמה: הגשת תצהיר עדים, העלאת יפוי כח חתום"
+                  value={docRequestTitle}
+                  onChange={(e) => setDocRequestTitle(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#2d1e10] mb-1">הנחיות או פירוט נוסף (אופציונלי):</label>
+                <textarea
+                  placeholder="כתוב הנחיות הגשה לבעל הדין (למשל: נא להגיש בקובץ PDF קריא עד תאריך...)"
+                  value={docRequestDesc}
+                  onChange={(e) => setDocRequestDesc(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-3 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium h-24 resize-none"
+                />
+              </div>
+
+              {/* שגיאות או הצלחה */}
+              {docRequestError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>{docRequestError}</span>
+                </div>
+              )}
+
+              {docRequestSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                  <span>{docRequestSuccess}</span>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-[#eadeca] flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowDocRequestModal(false)}
+                  className="px-4 py-2 rounded-xl bg-[#faf6ee] border border-[#eadeca] text-[#5c4a3c] hover:bg-[#f3eedf] cursor-pointer"
+                >
+                  ביטול
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl gold-button font-bold cursor-pointer"
+                >
+                  שלח דרישה
                 </button>
               </div>
             </form>

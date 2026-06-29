@@ -69,12 +69,13 @@ CREATE TABLE public.hearings (
 -- ו. טבלת מסמכי דיונים (כולל עמודת case_id למידור וסינון)
 CREATE TABLE public.documents (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    hearing_id UUID REFERENCES public.hearings(id) ON DELETE CASCADE NOT NULL,
+    hearing_id UUID REFERENCES public.hearings(id) ON DELETE CASCADE, -- אופציונלי (מותר NULL למסמכים ברמת התיק)
     case_id UUID REFERENCES public.cases(id) ON DELETE CASCADE NOT NULL, -- שיוך ישיר לתיק לצורך אבטחה
     uploaded_by UUID REFERENCES public.profiles(id) ON UPDATE CASCADE ON DELETE SET NULL NOT NULL,
     file_path TEXT NOT NULL, -- נתיב ב-Storage Bucket
     file_name TEXT NOT NULL,
     document_type document_type_type NOT NULL,
+    folder_type TEXT CHECK (folder_type IN ('General', 'Plaintiff_Docs', 'Defendant_Docs')) DEFAULT 'General' NOT NULL, -- תיקיית האחסון בתוך התיק
     is_shared BOOLEAN DEFAULT FALSE NOT NULL, -- שיתוף מסמכי תובע/נתבע עם הצד השני
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
@@ -161,6 +162,32 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- ג. פונקציה לקבלת תפקיד המשתמש בתוך תיק ספציפי (תובע, נתבע או מזכירות)
+CREATE OR REPLACE FUNCTION public.get_user_case_role(target_case_id UUID, target_user_id UUID)
+RETURNS TEXT SECURITY DEFINER AS $$
+DECLARE
+    role_val party_role_type;
+BEGIN
+    -- בדיקה האם המשתמש הוא סגל המזכירות
+    IF EXISTS (
+        SELECT 1 FROM public.profiles 
+        WHERE id = target_user_id AND system_role = 'secretariat'
+    ) THEN
+        RETURN 'secretariat';
+    END IF;
+
+    -- בדיקת תפקיד בעל דין בתיק
+    SELECT party_role INTO role_val FROM public.case_participants
+    WHERE case_id = target_case_id AND user_id = target_user_id;
+
+    IF role_val IS NOT NULL THEN
+        RETURN role_val::text;
+    END IF;
+
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
 -- =========================================================================
 -- 6. פוליסות RLS (Security Policies)
 -- =========================================================================
@@ -220,22 +247,41 @@ CREATE POLICY "Users can view authorized documents in their cases"
 ON public.documents FOR SELECT TO authenticated USING (
     uploaded_by = auth.uid() -- מסמך שהם עצמם העלו
     OR 
+    public.is_secretariat() -- מזכירות רואה הכל
+    OR
     (
-        (document_type = 'secretariat' OR is_shared = true) -- החלטת בי"ד או מסמך שהותר לשיתוף
-        AND public.check_case_access(case_id) -- משתמש משויך לתיק
+        folder_type = 'General' 
+        AND public.check_case_access(case_id) -- תיקייה כללית נגישה לכל המשתתפים בתיק
+    )
+    OR
+    (
+        folder_type = 'Plaintiff_Docs' 
+        AND public.get_user_case_role(case_id, auth.uid()) = 'plaintiff' -- מסמכי תובע רק לתובע
+    )
+    OR
+    (
+        folder_type = 'Defendant_Docs' 
+        AND public.get_user_case_role(case_id, auth.uid()) = 'defendant' -- מסמכי נתבע רק לנתבע
     )
 );
 
 CREATE POLICY "Secretariat can insert any document" 
 ON public.documents FOR INSERT TO authenticated WITH CHECK (public.is_secretariat());
 
-CREATE POLICY "Litigants can insert documents to hearings they participate in" 
+CREATE POLICY "Litigants can insert documents to cases they participate in" 
 ON public.documents FOR INSERT TO authenticated WITH CHECK (
     uploaded_by = auth.uid()
     AND public.check_case_access(case_id)
+    AND (
+        (folder_type = 'Plaintiff_Docs' AND public.get_user_case_role(case_id, auth.uid()) = 'plaintiff')
+        OR
+        (folder_type = 'Defendant_Docs' AND public.get_user_case_role(case_id, auth.uid()) = 'defendant')
+        OR
+        (folder_type = 'General')
+    )
 );
 
-CREATE POLICY "Secretariat can update/delete any document" 
+CREATE POLICY "Secretariat can update/delete/modify any document" 
 ON public.documents FOR ALL TO authenticated USING (public.is_secretariat());
 
 -- ז. פוליסות עבור REQUESTS
@@ -412,4 +458,33 @@ WITH CHECK (auth.uid() = sender_id);
 -- החלת טריגר התיעוד על הודעות
 CREATE OR REPLACE TRIGGER audit_messages_trigger
     AFTER INSERT OR UPDATE OR DELETE ON public.messages
+    FOR EACH ROW EXECUTE FUNCTION public.process_audit_log();
+
+-- =========================================================================
+-- 10. טבלת דרישות מסמכים (Document Requests)
+-- =========================================================================
+CREATE TABLE public.document_requests (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    case_id UUID REFERENCES public.cases(id) ON DELETE CASCADE NOT NULL,
+    requested_to UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT CHECK (status IN ('pending', 'completed')) DEFAULT 'pending' NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+ALTER TABLE public.document_requests ENABLE ROW LEVEL SECURITY;
+
+-- פוליסות RLS עבור דרישות מסמכים
+CREATE POLICY "Secretariat can manage document requests"
+ON public.document_requests FOR ALL TO authenticated
+USING (public.is_secretariat());
+
+CREATE POLICY "Users can view their own document requests"
+ON public.document_requests FOR SELECT TO authenticated
+USING (requested_to = auth.uid());
+
+-- החלת טריגר התיעוד על דרישות מסמכים
+CREATE OR REPLACE TRIGGER audit_document_requests_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON public.document_requests
     FOR EACH ROW EXECUTE FUNCTION public.process_audit_log();

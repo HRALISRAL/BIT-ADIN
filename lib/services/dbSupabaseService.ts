@@ -9,7 +9,8 @@ import {
   ClientRequest,
   DocumentType,
   PartyRole,
-  DirectMessage
+  DirectMessage,
+  DocumentRequest
 } from '../../types';
 
 export const dbSupabaseService = {
@@ -264,6 +265,7 @@ export const dbSupabaseService = {
         file_path: resolvedPath,
         file_name: d.file_name,
         document_type: d.document_type,
+        folder_type: d.folder_type,
         is_shared: d.is_shared,
         created_at: d.created_at,
         uploader_name: d.profiles?.full_name || 'משתמש לא ידוע'
@@ -271,7 +273,49 @@ export const dbSupabaseService = {
     });
   },
 
-  async uploadDocument(supabase: SupabaseClient, hearingId: string, userId: string, documentType: DocumentType, fileName: string, fileBlobMockUrl?: string): Promise<Document> {
+  async getCaseDocuments(supabase: SupabaseClient, caseId: string): Promise<Document[]> {
+    const { data, error } = await supabase
+      .from('documents')
+      .select(`
+        *,
+        profiles (full_name)
+      `)
+      .eq('case_id', caseId);
+    if (error) throw error;
+
+    return data.map((d: any) => {
+      let resolvedPath = d.file_path;
+      if (d.file_path && !d.file_path.startsWith('http') && !d.file_path.startsWith('/mock')) {
+        const { data: urlData } = supabase.storage
+          .from('court-documents')
+          .getPublicUrl(d.file_path);
+        resolvedPath = urlData?.publicUrl || d.file_path;
+      }
+      return {
+        id: d.id,
+        hearing_id: d.hearing_id,
+        case_id: d.case_id,
+        uploaded_by: d.uploaded_by,
+        file_path: resolvedPath,
+        file_name: d.file_name,
+        document_type: d.document_type,
+        folder_type: d.folder_type,
+        is_shared: d.is_shared,
+        created_at: d.created_at,
+        uploader_name: d.profiles?.full_name || 'משתמש לא ידוע'
+      };
+    });
+  },
+
+  async uploadDocument(
+    supabase: SupabaseClient, 
+    hearingId: string, 
+    userId: string, 
+    documentType: DocumentType, 
+    fileName: string, 
+    fileBlobMockUrl?: string,
+    folderType?: 'General' | 'Plaintiff_Docs' | 'Defendant_Docs'
+  ): Promise<Document> {
     // 1. שליפת הדיון כדי לדעת את ה-case_id המקושר
     const { data: hearingData, error: hErr } = await supabase
       .from('hearings')
@@ -280,17 +324,23 @@ export const dbSupabaseService = {
       .single();
     if (hErr || !hearingData) throw new Error("Hearing not found");
 
+    const finalFolderType = folderType || (
+      documentType === 'plaintiff' ? 'Plaintiff_Docs' :
+      documentType === 'defendant' ? 'Defendant_Docs' : 'General'
+    );
+
     // 2. שמירת רשומת המסמך בבסיס הנתונים
     const { data, error } = await supabase
       .from('documents')
       .insert({
         hearing_id: hearingId,
-        case_id: hearingData.case_id, // שימוש ב-case_id החדש
+        case_id: hearingData.case_id,
         uploaded_by: userId,
         file_path: fileBlobMockUrl || '', 
         file_name: fileName,
         document_type: documentType,
-        is_shared: false
+        folder_type: finalFolderType,
+        is_shared: finalFolderType === 'General'
       })
       .select()
       .single();
@@ -304,8 +354,14 @@ export const dbSupabaseService = {
     userId: string,
     documentType: DocumentType,
     fileName: string,
-    filePath: string
+    filePath: string,
+    folderType?: 'General' | 'Plaintiff_Docs' | 'Defendant_Docs'
   ): Promise<Document> {
+    const finalFolderType = folderType || (
+      documentType === 'plaintiff' ? 'Plaintiff_Docs' :
+      documentType === 'defendant' ? 'Defendant_Docs' : 'General'
+    );
+
     const { data, error } = await supabase
       .from('documents')
       .insert({
@@ -519,6 +575,88 @@ export const dbSupabaseService = {
       .from('profiles')
       .delete()
       .eq('id', userId);
+    if (error) throw error;
+    return true;
+  },
+
+  async getDocumentRequests(supabase: SupabaseClient, userId?: string): Promise<DocumentRequest[]> {
+    let query = supabase
+      .from('document_requests')
+      .select(`
+        *,
+        cases(case_number, title),
+        profiles!requested_to(full_name)
+      `);
+
+    if (userId) {
+      query = query.eq('requested_to', userId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    return (data || []).map((dr: any) => ({
+      id: dr.id,
+      case_id: dr.case_id,
+      requested_to: dr.requested_to,
+      title: dr.title,
+      description: dr.description,
+      status: dr.status as 'pending' | 'completed',
+      created_at: dr.created_at,
+      case_number: dr.cases?.case_number,
+      case_title: dr.cases?.title,
+      requested_to_name: dr.profiles?.full_name
+    }));
+  },
+
+  async createDocumentRequest(
+    supabase: SupabaseClient,
+    caseId: string,
+    requestedTo: string,
+    title: string,
+    description?: string
+  ): Promise<DocumentRequest> {
+    const { data, error } = await supabase
+      .from('document_requests')
+      .insert({
+        case_id: caseId,
+        requested_to: requestedTo,
+        title,
+        description,
+        status: 'pending'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async updateDocumentRequestStatus(
+    supabase: SupabaseClient,
+    requestId: string,
+    status: 'pending' | 'completed'
+  ): Promise<boolean> {
+    const { error } = await supabase
+      .from('document_requests')
+      .update({ status })
+      .eq('id', requestId);
+    if (error) throw error;
+    return true;
+  },
+
+  async moveDocument(
+    supabase: SupabaseClient,
+    documentId: string,
+    folderType: 'General' | 'Plaintiff_Docs' | 'Defendant_Docs'
+  ): Promise<boolean> {
+    const { error } = await supabase
+      .from('documents')
+      .update({ 
+        folder_type: folderType,
+        is_shared: folderType === 'General'
+      })
+      .eq('id', documentId);
     if (error) throw error;
     return true;
   }

@@ -9,7 +9,7 @@ import {
   CheckCircle2, Clock, ShieldCheck, ArrowLeft, Send, Download, HelpCircle, Mail
 } from "lucide-react";
 import { dbService } from "./../../../lib/services/dbService";
-import { UserProfile, Case, Hearing, Document, ClientRequest, DocumentType, DirectMessage } from "../../../types";
+import { UserProfile, Case, Hearing, Document, ClientRequest, DocumentType, DirectMessage, DocumentRequest } from "../../../types";
 import { isMockMode, supabase } from "./../../../lib/supabase/client";
 
 function ClientDashboardContent() {
@@ -28,6 +28,9 @@ function ClientDashboardContent() {
   const [activeHearing, setActiveHearing] = useState<Hearing | null>(null);
   const [activeHearingDocs, setActiveHearingDocs] = useState<Document[]>([]);
   const [userRoleInActiveCase, setUserRoleInActiveCase] = useState<'plaintiff' | 'defendant' | null>(null);
+  const [myDocRequests, setMyDocRequests] = useState<DocumentRequest[]>([]);
+  const [activeDocRequest, setActiveDocRequest] = useState<DocumentRequest | null>(null);
+  const [showUploadRequestModal, setShowUploadRequestModal] = useState(false);
 
   // מודלים ומצבי טפסים
   const [loading, setLoading] = useState(true);
@@ -60,11 +63,12 @@ function ClientDashboardContent() {
       }
       setCurrentUser(profile);
 
-      const [allCases, userHearings, allRequests, userMessages] = await Promise.all([
+      const [allCases, userHearings, allRequests, userMessages, docReqs] = await Promise.all([
         dbService.getCases(),
         dbService.getHearings(uid),
         dbService.getClientRequests(),
-        dbService.getMessages(uid)
+        dbService.getMessages(uid),
+        dbService.getDocumentRequests(uid)
       ]);
 
       const myAssociatedCases = allCases.filter(c => 
@@ -76,6 +80,7 @@ function ClientDashboardContent() {
       const userRequests = allRequests.filter(r => r.user_id === uid);
       setMyRequests(userRequests);
       setMyMessages(userMessages);
+      setMyDocRequests(docReqs);
 
       if (userHearings.length > 0) {
         handleSelectHearing(userHearings[0], myAssociatedCases, uid);
@@ -131,6 +136,73 @@ function ClientDashboardContent() {
       setActiveHearingDocs(docs);
     } catch (err) {
       console.error("Error loading documents for hearing:", err);
+    }
+  };
+
+  const handleOpenDocRequestUpload = (req: DocumentRequest) => {
+    setActiveDocRequest(req);
+    setUploadFileSelectorName("");
+    setSelectedFileObject(null);
+    setShowUploadRequestModal(true);
+  };
+
+  const handleUploadDocRequestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeDocRequest || !currentUser || !uploadFileSelectorName.trim()) return;
+
+    try {
+      setUploading(true);
+      const caseItem = cases.find(c => c.id === activeDocRequest.case_id);
+      if (!caseItem) throw new Error("התיק לא נמצא במערכת.");
+
+      const participant = caseItem.participants?.find(p => p.user_id === currentUser.id);
+      const role = participant?.party_role;
+      if (!role) throw new Error("אינך משויך לתיק זה כבעל דין.");
+
+      const folderType = role === 'plaintiff' ? 'Plaintiff_Docs' : 'Defendant_Docs';
+      const docType = role as DocumentType;
+
+      let filePath = "";
+      if (isMockMode || !supabase) {
+        filePath = `/mock/client_upload_${Date.now()}_${uploadFileSelectorName}`;
+      } else {
+        if (!selectedFileObject) {
+          throw new Error("נא לבחור קובץ להעלאה מהמחשב.");
+        }
+        const fileExt = selectedFileObject.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+        const storagePath = `cases/${activeDocRequest.case_id}/${folderType}/${fileName}`;
+        
+        const { data: storageData, error: storageErr } = await supabase.storage
+          .from('court-documents')
+          .upload(storagePath, selectedFileObject);
+          
+        if (storageErr) throw storageErr;
+        filePath = storagePath;
+      }
+      
+      await dbService.uploadCaseDocument(
+        activeDocRequest.case_id,
+        currentUser.id,
+        docType,
+        uploadFileSelectorName.trim(),
+        filePath,
+        folderType
+      );
+
+      await dbService.updateDocumentRequestStatus(activeDocRequest.id, 'completed');
+
+      setUploadFileSelectorName("");
+      setSelectedFileObject(null);
+      setShowUploadRequestModal(false);
+      setActiveDocRequest(null);
+      loadClientData(currentUser.id);
+      alert("הקובץ הועלה בהצלחה לתיקיית " + folderType + " ודרישת המסמך סומנה כהושלמה!");
+    } catch (err: any) {
+      console.error("Failed to upload file for request:", err);
+      alert("שגיאה בהעלאת הקובץ: " + (err.message || err));
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -267,6 +339,50 @@ function ClientDashboardContent() {
 
       {/* גוף הדף */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-8">
+
+        {/* ווידג'ט דרישות מסמכים פתוחות - יוצג בראש הדף אם יש דרישות פתוחות */}
+        {myDocRequests.filter(r => r.status === 'pending').length > 0 && (
+          <section className="bg-amber-50 border border-amber-200 rounded-2xl p-6 space-y-4 shadow-sm animate-in fade-in slide-in-from-top-4 duration-200">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold text-serif text-amber-900 flex items-center gap-2">
+                  <Mail className="h-5 w-5 text-amber-700 animate-pulse" />
+                  <span>ממתינות לך דרישות מסמכים פתוחות מבית הדין</span>
+                </h3>
+                <p className="text-xs text-amber-800 font-semibold mt-1">
+                  המזכירות דורשת ממך להעלות מסמכים מסוימים כדי להמשיך בטיפול בתיק שלך. נא לפעול בהקדם.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {myDocRequests.filter(r => r.status === 'pending').map(req => (
+                <div key={req.id} className="p-4 rounded-xl bg-white border border-amber-100 flex flex-col justify-between gap-3 text-xs font-semibold shadow-sm hover:border-amber-300 transition-all">
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[9px] font-bold">דרישת מסמך</span>
+                      <span className="text-[10px] text-slate-400 font-medium">תיק: {req.case_number}</span>
+                    </div>
+                    <h4 className="font-bold text-[#2d1e10] text-sm mt-2 text-serif">{req.title}</h4>
+                    {req.description && (
+                      <p className="text-[#5c4a3c] text-[11px] font-normal mt-1.5 line-clamp-2">
+                        {req.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => handleOpenDocRequestUpload(req)}
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl gold-button font-bold text-xs cursor-pointer shadow-sm mt-2"
+                  >
+                    <Upload className="h-4 w-4" />
+                    <span>העלה מסמכים לתיק {req.case_number}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* 1. כרטיס דיון קרוב והגשת בקשות מהירה */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
@@ -791,6 +907,110 @@ function ClientDashboardContent() {
                 </button>
               </div>
 
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* מודל העלאת מסמך בהתאמה לדרישת המזכירות */}
+      {showUploadRequestModal && activeDocRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/40 backdrop-blur-sm animate-fade-in">
+          <div className="parchment-panel w-full max-w-md p-6 border-[#eadeca] shadow-2xl animate-in fade-in zoom-in duration-200 torah-card">
+            
+            <div className="flex items-center justify-between border-b border-[#eadeca] pb-3 mb-5">
+              <h3 className="text-lg font-bold text-serif text-[#2d1e10] flex items-center gap-2">
+                <Upload className="h-5 w-5 text-[#8b5a2b]" />
+                <span>העלאת מסמכים עבור תיק {activeDocRequest.case_number}</span>
+              </h3>
+              <button
+                onClick={() => {
+                  setShowUploadRequestModal(false);
+                  setActiveDocRequest(null);
+                }}
+                className="text-[#5c4a3c] hover:text-[#2d1e10] text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50/20 border border-amber-250/70 text-[11.5px] text-amber-800 font-bold mb-4 flex items-start gap-2">
+              <ShieldCheck className="h-4.5 w-4.5 text-amber-800 flex-shrink-0 mt-0.5" />
+              <div>
+                <span>אתה מעלה מסמכים עבור תיק זה בתור </span>
+                <strong className="underline">
+                  {cases.find(c => c.id === activeDocRequest.case_id)?.participants?.find(p => p.user_id === currentUser?.id)?.party_role === 'plaintiff' ? 'תובע' : 'נתבע'}
+                </strong>
+                <span>. המסמך יישמר אוטומטית בתיקייה הרלוונטית לך בתיק.</span>
+              </div>
+            </div>
+
+            <form onSubmit={handleUploadDocRequestSubmit} className="space-y-4 text-xs font-semibold">
+              <div>
+                <label className="block text-[#2d1e10] mb-1">דרישת המקור:</label>
+                <div className="p-2.5 rounded-lg bg-[#faf6ee] border border-[#eadeca] text-[#5c4a3c] font-medium text-[11px]">
+                  {activeDocRequest.title}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[#2d1e10] mb-1">כותרת או שם המסמך להעלאה *:</label>
+                <input
+                  type="text"
+                  placeholder="לדוגמה: תצהיר עדות מטעמי"
+                  value={uploadFileSelectorName}
+                  onChange={(e) => setUploadFileSelectorName(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium"
+                  required
+                />
+              </div>
+
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    setSelectedFileObject(e.target.files[0]);
+                    if (!uploadFileSelectorName) {
+                      setUploadFileSelectorName(e.target.files[0].name);
+                    }
+                  }
+                }}
+                className="hidden"
+                id="request-file-upload"
+              />
+
+              <div>
+                <label className="block text-[#2d1e10] mb-1">בחר קובץ להעלאה *:</label>
+                <label
+                  htmlFor="request-file-upload"
+                  className="flex items-center justify-center border border-dashed border-[#eadeca] hover:border-[#cda851] rounded-xl p-4 bg-white cursor-pointer transition-all gap-1.5 font-bold text-[#5c4a3c]"
+                >
+                  <Upload className="h-4 w-4 text-[#8b5a2b]" />
+                  <span>
+                    {selectedFileObject ? `קובץ: ${selectedFileObject.name}` : "בחר קובץ מהמחשב (PDF/תמונות)"}
+                  </span>
+                </label>
+              </div>
+
+              <div className="pt-3 border-t border-[#eadeca] flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUploadRequestModal(false);
+                    setActiveDocRequest(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#faf6ee] border border-[#eadeca] text-[#5c4a3c] hover:bg-[#f3eedf] cursor-pointer"
+                >
+                  ביטול
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploading || !uploadFileSelectorName.trim() || (!isMockMode && !selectedFileObject)}
+                  className="px-5 py-2 rounded-xl gold-button font-bold cursor-pointer disabled:opacity-50"
+                >
+                  {uploading ? 'מעלה...' : 'העלה מסמך'}
+                </button>
+              </div>
             </form>
           </div>
         </div>

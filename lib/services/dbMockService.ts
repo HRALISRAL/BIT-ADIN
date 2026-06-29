@@ -10,7 +10,8 @@ import {
   HearingStatus,
   CaseStatus,
   PartyRole,
-  DirectMessage
+  DirectMessage,
+  DocumentRequest
 } from '../../types';
 
 // =========================================================================
@@ -317,17 +318,45 @@ export const dbMockService = {
       const uploader = profiles.find(p => p.id === d.uploaded_by);
       return {
         ...d,
+        folder_type: d.folder_type || (d.document_type === 'plaintiff' ? 'Plaintiff_Docs' : d.document_type === 'defendant' ? 'Defendant_Docs' : 'General'),
         uploader_name: uploader?.full_name || 'משתמש לא ידוע'
       };
     });
   },
 
-  async uploadDocument(hearingId: string, userId: string, documentType: DocumentType, fileName: string, fileBlobMockUrl?: string): Promise<Document> {
+  async getCaseDocuments(caseId: string): Promise<Document[]> {
+    const allDocs = getLocalData<Document[]>('documents', INITIAL_DOCUMENTS);
+    const profiles = getLocalData<UserProfile[]>('profiles', INITIAL_PROFILES);
+    const docList = allDocs.filter(d => d.case_id === caseId);
+
+    return docList.map(d => {
+      const uploader = profiles.find(p => p.id === d.uploaded_by);
+      return {
+        ...d,
+        folder_type: d.folder_type || (d.document_type === 'plaintiff' ? 'Plaintiff_Docs' : d.document_type === 'defendant' ? 'Defendant_Docs' : 'General'),
+        uploader_name: uploader?.full_name || 'משתמש לא ידוע'
+      };
+    });
+  },
+
+  async uploadDocument(
+    hearingId: string, 
+    userId: string, 
+    documentType: DocumentType, 
+    fileName: string, 
+    fileBlobMockUrl?: string,
+    folderType?: 'General' | 'Plaintiff_Docs' | 'Defendant_Docs'
+  ): Promise<Document> {
     const allDocs = getLocalData<Document[]>('documents', INITIAL_DOCUMENTS);
     const hearings = getLocalData<Hearing[]>('hearings', INITIAL_HEARINGS);
     
     const hearing = hearings.find(h => h.id === hearingId);
     if (!hearing) throw new Error("Hearing not found");
+
+    const finalFolderType = folderType || (
+      documentType === 'plaintiff' ? 'Plaintiff_Docs' :
+      documentType === 'defendant' ? 'Defendant_Docs' : 'General'
+    );
 
     const newDoc: Document = {
       id: `doc-${Date.now()}`,
@@ -337,7 +366,8 @@ export const dbMockService = {
       file_path: fileBlobMockUrl || `/mock/uploaded_${Date.now()}_${fileName}`,
       file_name: fileName,
       document_type: documentType,
-      is_shared: false,
+      folder_type: finalFolderType,
+      is_shared: finalFolderType === 'General',
       created_at: new Date().toISOString()
     };
     allDocs.push(newDoc);
@@ -350,18 +380,26 @@ export const dbMockService = {
     userId: string,
     documentType: DocumentType,
     fileName: string,
-    filePath: string
+    filePath: string,
+    folderType?: 'General' | 'Plaintiff_Docs' | 'Defendant_Docs'
   ): Promise<Document> {
     const documents = getLocalData<Document[]>('documents', INITIAL_DOCUMENTS);
+    
+    const finalFolderType = folderType || (
+      documentType === 'plaintiff' ? 'Plaintiff_Docs' :
+      documentType === 'defendant' ? 'Defendant_Docs' : 'General'
+    );
+
     const newDoc: Document = {
-      id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      hearing_id: '',
+      id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      hearing_id: null,
       case_id: caseId,
       uploaded_by: userId,
       file_path: filePath,
       file_name: fileName,
       document_type: documentType,
-      is_shared: true,
+      folder_type: finalFolderType,
+      is_shared: finalFolderType === 'General',
       created_at: new Date().toISOString()
     };
     documents.push(newDoc);
@@ -538,5 +576,77 @@ export const dbMockService = {
     const filtered = profiles.filter(p => p.id !== userId);
     setLocalData('profiles', filtered);
     return true;
+  },
+
+  async getDocumentRequests(userId?: string): Promise<DocumentRequest[]> {
+    const reqs = getLocalData<DocumentRequest[]>('document_requests', []);
+    const cases = getLocalData<Case[]>('cases', INITIAL_CASES);
+    const profiles = getLocalData<UserProfile[]>('profiles', INITIAL_PROFILES);
+
+    let filtered = reqs;
+    if (userId) {
+      filtered = reqs.filter(r => r.requested_to === userId);
+    }
+
+    return filtered.map(r => {
+      const c = cases.find(caseItem => caseItem.id === r.case_id);
+      const p = profiles.find(profileItem => profileItem.id === r.requested_to);
+      return {
+        ...r,
+        case_number: c?.case_number || '—',
+        case_title: c?.title || '—',
+        requested_to_name: p?.full_name || '—'
+      };
+    }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  },
+
+  async createDocumentRequest(
+    caseId: string,
+    requestedTo: string,
+    title: string,
+    description?: string
+  ): Promise<DocumentRequest> {
+    const reqs = getLocalData<DocumentRequest[]>('document_requests', []);
+    const newReq: DocumentRequest = {
+      id: `dreq-${Date.now()}`,
+      case_id: caseId,
+      requested_to: requestedTo,
+      title,
+      description,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+    reqs.push(newReq);
+    setLocalData('document_requests', reqs);
+    return newReq;
+  },
+
+  async updateDocumentRequestStatus(
+    requestId: string,
+    status: 'pending' | 'completed'
+  ): Promise<boolean> {
+    const reqs = getLocalData<DocumentRequest[]>('document_requests', []);
+    const idx = reqs.findIndex(r => r.id === requestId);
+    if (idx !== -1) {
+      reqs[idx].status = status;
+      setLocalData('document_requests', reqs);
+      return true;
+    }
+    return false;
+  },
+
+  async moveDocument(
+    documentId: string,
+    folderType: 'General' | 'Plaintiff_Docs' | 'Defendant_Docs'
+  ): Promise<boolean> {
+    const docs = getLocalData<Document[]>('documents', INITIAL_DOCUMENTS);
+    const idx = docs.findIndex(d => d.id === documentId);
+    if (idx !== -1) {
+      docs[idx].folder_type = folderType;
+      docs[idx].is_shared = folderType === 'General';
+      setLocalData('documents', docs);
+      return true;
+    }
+    return false;
   }
 };

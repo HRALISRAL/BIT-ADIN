@@ -68,12 +68,13 @@ export interface Hearing {
 
 export interface Document {
   id: string;
-  hearing_id: string;
+  hearing_id?: string | null;
   case_id: string;
   uploaded_by: string;
   file_path: string; // נתיב פיזי ב-Storage או Mock URL
   file_name: string;
   document_type: DocumentType;
+  folder_type?: 'General' | 'Plaintiff_Docs' | 'Defendant_Docs'; // תיקיית האחסון בתוך התיק
   is_shared: boolean;
   created_at: string;
   
@@ -111,4 +112,19 @@ export interface DirectMessage {
   sender_name?: string;
   recipient_name?: string;
   case_number?: string;
+}
+
+export interface DocumentRequest {
+  id: string;
+  case_id: string;
+  requested_to: string;
+  title: string;
+  description?: string;
+  status: 'pending' | 'completed';
+  created_at: string;
+
+  // שדות הרחבה לתצוגה
+  case_number?: string;
+  case_title?: string;
+  requested_to_name?: string;
 }

@@ -14,7 +14,10 @@ import {
   createProfileAction,
   sendMessageAction,
   uploadCaseDocumentAction,
-  deleteProfileAction
+  deleteProfileAction,
+  createDocumentRequestAction,
+  updateDocumentRequestStatusAction,
+  moveDocumentAction
 } from '../../app/actions';
 import { 
   UserProfile, 
@@ -24,7 +27,8 @@ import {
   Document, 
   ClientRequest,
   DocumentType,
-  DirectMessage
+  DirectMessage,
+  DocumentRequest
 } from '../../types';
 
 export const dbService = {
@@ -110,11 +114,25 @@ export const dbService = {
     return dbSupabaseService.getDocuments(supabase, hearingId, userId, userRole);
   },
 
-  async uploadDocument(hearingId: string, userId: string, documentType: DocumentType, fileName: string, fileBlobMockUrl?: string): Promise<Document> {
+  async getCaseDocuments(caseId: string): Promise<Document[]> {
     if (isMockMode || !supabase) {
-      return dbMockService.uploadDocument(hearingId, userId, documentType, fileName, fileBlobMockUrl);
+      return dbMockService.getCaseDocuments(caseId);
     }
-    return uploadDocumentAction({ hearingId, userId, documentType, fileName, fileBlobMockUrl });
+    return dbSupabaseService.getCaseDocuments(supabase, caseId);
+  },
+
+  async uploadDocument(
+    hearingId: string, 
+    userId: string, 
+    documentType: DocumentType, 
+    fileName: string, 
+    fileBlobMockUrl?: string,
+    folderType?: 'General' | 'Plaintiff_Docs' | 'Defendant_Docs'
+  ): Promise<Document> {
+    if (isMockMode || !supabase) {
+      return dbMockService.uploadDocument(hearingId, userId, documentType, fileName, fileBlobMockUrl, folderType);
+    }
+    return uploadDocumentAction({ hearingId, userId, documentType, fileName, fileBlobMockUrl, folderType: folderType || 'General' });
   },
 
   async toggleDocumentShare(documentId: string, isShared: boolean): Promise<boolean> {
@@ -203,11 +221,18 @@ export const dbService = {
     return sendMessageAction({ senderId, recipientId, title, content, caseId });
   },
 
-  async uploadCaseDocument(caseId: string, userId: string, documentType: DocumentType, fileName: string, filePath: string): Promise<Document> {
+  async uploadCaseDocument(
+    caseId: string, 
+    userId: string, 
+    documentType: DocumentType, 
+    fileName: string, 
+    filePath: string,
+    folderType?: 'General' | 'Plaintiff_Docs' | 'Defendant_Docs'
+  ): Promise<Document> {
     if (isMockMode || !supabase) {
-      return dbMockService.uploadCaseDocument(caseId, userId, documentType, fileName, filePath);
+      return dbMockService.uploadCaseDocument(caseId, userId, documentType, fileName, filePath, folderType);
     }
-    return uploadCaseDocumentAction({ caseId, userId, documentType, fileName, filePath });
+    return uploadCaseDocumentAction({ caseId, userId, documentType, fileName, filePath, folderType: folderType || 'General' });
   },
 
   async deleteProfile(userId: string): Promise<boolean> {
@@ -215,5 +240,33 @@ export const dbService = {
       return dbMockService.deleteProfile(userId);
     }
     return deleteProfileAction({ userId });
+  },
+
+  async getDocumentRequests(userId?: string): Promise<DocumentRequest[]> {
+    if (isMockMode || !supabase) {
+      return dbMockService.getDocumentRequests(userId);
+    }
+    return dbSupabaseService.getDocumentRequests(supabase, userId);
+  },
+
+  async createDocumentRequest(caseId: string, requestedTo: string, title: string, description?: string): Promise<DocumentRequest> {
+    if (isMockMode || !supabase) {
+      return dbMockService.createDocumentRequest(caseId, requestedTo, title, description);
+    }
+    return createDocumentRequestAction({ caseId, requestedTo, title, description });
+  },
+
+  async updateDocumentRequestStatus(requestId: string, status: 'pending' | 'completed'): Promise<boolean> {
+    if (isMockMode || !supabase) {
+      return dbMockService.updateDocumentRequestStatus(requestId, status);
+    }
+    return updateDocumentRequestStatusAction({ requestId, status });
+  },
+
+  async moveDocument(documentId: string, folderType: 'General' | 'Plaintiff_Docs' | 'Defendant_Docs'): Promise<boolean> {
+    if (isMockMode || !supabase) {
+      return dbMockService.moveDocument(documentId, folderType);
+    }
+    return moveDocumentAction({ documentId, folderType });
   }
 };

@@ -42,7 +42,8 @@ const uploadDocumentSchema = z.object({
   userId: z.string().uuid("משתמש לא תקין"),
   documentType: z.enum(['plaintiff', 'defendant', 'secretariat'] as const),
   fileName: z.string().min(1, "שם הקובץ לא תקין"),
-  fileBlobMockUrl: z.string().optional()
+  fileBlobMockUrl: z.string().optional(),
+  folderType: z.enum(['General', 'Plaintiff_Docs', 'Defendant_Docs'] as const).optional().default('General')
 });
 
 const updateRequestStatusSchema = z.object({
@@ -133,7 +134,8 @@ export async function uploadDocumentAction(data: z.infer<typeof uploadDocumentSc
     validated.userId,
     validated.documentType as DocumentType,
     validated.fileName,
-    validated.fileBlobMockUrl
+    validated.fileBlobMockUrl,
+    validated.folderType
   );
 }
 
@@ -142,7 +144,8 @@ const uploadCaseDocumentSchema = z.object({
   userId: z.string().uuid(),
   documentType: z.enum(['plaintiff', 'defendant', 'secretariat']),
   fileName: z.string(),
-  filePath: z.string()
+  filePath: z.string(),
+  folderType: z.enum(['General', 'Plaintiff_Docs', 'Defendant_Docs']).optional().default('General')
 });
 
 export async function uploadCaseDocumentAction(data: z.infer<typeof uploadCaseDocumentSchema>) {
@@ -158,7 +161,8 @@ export async function uploadCaseDocumentAction(data: z.infer<typeof uploadCaseDo
     validated.userId,
     validated.documentType as DocumentType,
     validated.fileName,
-    validated.filePath
+    validated.filePath,
+    validated.folderType
   );
 }
 
@@ -277,4 +281,65 @@ export async function deleteProfileAction(data: z.infer<typeof deleteProfileSche
   if (!user) throw new Error("Unauthorized");
 
   return await dbSupabaseService.deleteProfile(supabase, validated.userId);
+}
+
+const createDocumentRequestSchema = z.object({
+  caseId: z.string().uuid("מזהה תיק לא תקין"),
+  requestedTo: z.string().uuid("מזהה משתמש לא תקין"),
+  title: z.string().min(1, "כותרת הבקשה היא שדה חובה"),
+  description: z.string().optional()
+});
+
+export async function createDocumentRequestAction(data: z.infer<typeof createDocumentRequestSchema>) {
+  const validated = createDocumentRequestSchema.parse(data);
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  return await dbSupabaseService.createDocumentRequest(
+    supabase,
+    validated.caseId,
+    validated.requestedTo,
+    validated.title,
+    validated.description
+  );
+}
+
+const updateDocumentRequestStatusSchema = z.object({
+  requestId: z.string().uuid("מזהה בקשה לא תקין"),
+  status: z.enum(['pending', 'completed'])
+});
+
+export async function updateDocumentRequestStatusAction(data: z.infer<typeof updateDocumentRequestStatusSchema>) {
+  const validated = updateDocumentRequestStatusSchema.parse(data);
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  return await dbSupabaseService.updateDocumentRequestStatus(
+    supabase,
+    validated.requestId,
+    validated.status
+  );
+}
+
+const moveDocumentSchema = z.object({
+  documentId: z.string().uuid("מזהה מסמך לא תקין"),
+  folderType: z.enum(['General', 'Plaintiff_Docs', 'Defendant_Docs'])
+});
+
+export async function moveDocumentAction(data: z.infer<typeof moveDocumentSchema>) {
+  const validated = moveDocumentSchema.parse(data);
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  return await dbSupabaseService.moveDocument(
+    supabase,
+    validated.documentId,
+    validated.folderType
+  );
 }
