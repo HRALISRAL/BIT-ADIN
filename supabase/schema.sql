@@ -444,8 +444,8 @@ CREATE OR REPLACE TRIGGER audit_requests_trigger
 -- =========================================================================
 CREATE TABLE public.messages (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    sender_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-    recipient_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    sender_id UUID REFERENCES public.profiles(id) ON UPDATE CASCADE ON DELETE CASCADE NOT NULL,
+    recipient_id UUID REFERENCES public.profiles(id) ON UPDATE CASCADE ON DELETE CASCADE NOT NULL,
     case_id UUID REFERENCES public.cases(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     content TEXT NOT NULL,
@@ -474,7 +474,7 @@ CREATE OR REPLACE TRIGGER audit_messages_trigger
 CREATE TABLE public.document_requests (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     case_id UUID REFERENCES public.cases(id) ON DELETE CASCADE NOT NULL,
-    requested_to UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    requested_to UUID REFERENCES public.profiles(id) ON UPDATE CASCADE ON DELETE CASCADE NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
     status TEXT CHECK (status IN ('pending', 'completed')) DEFAULT 'pending' NOT NULL,

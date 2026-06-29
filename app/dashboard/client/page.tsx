@@ -40,6 +40,14 @@ function ClientDashboardContent() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // שדות טופס שליחת הודעה למזכירות
+  const [showSendMessageToSecModal, setShowSendMessageToSecModal] = useState(false);
+  const [secMsgTitle, setSecMsgTitle] = useState("");
+  const [secMsgContent, setSecMsgContent] = useState("");
+  const [secMsgSuccess, setSecMsgSuccess] = useState("");
+  const [secMsgError, setSecMsgError] = useState("");
+  const [selectedSecCaseId, setSelectedSecCaseId] = useState("");
+
   // שדות טופס בקשה
   const [reqCaseId, setReqCaseId] = useState("");
   const [reqType, setReqType] = useState<'postpone_hearing' | 'submit_special_document'>('postpone_hearing');
@@ -249,6 +257,61 @@ function ClientDashboardContent() {
     } catch (err: any) {
       console.error("Failed to upload file:", err);
       alert("שגיאה בהעלאת הקובץ: " + (err.message || err));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSendMessageToSecSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSecMsgError("");
+    setSecMsgSuccess("");
+
+    if (!secMsgTitle.trim() || !secMsgContent.trim()) {
+      setSecMsgError("נא למלא נושא ותוכן הודעה.");
+      return;
+    }
+
+    try {
+      setUploading(true);
+      
+      let recipientId = "";
+      if (isMockMode || !supabase) {
+        recipientId = "sec-1";
+      } else {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('system_role', 'secretariat')
+          .limit(1);
+        
+        if (!data || data.length === 0) {
+          throw new Error("לא נמצא משתמש מזכירות פעיל במערכת למשלוח ההודעה.");
+        }
+        recipientId = data[0].id;
+      }
+
+      await dbService.sendMessage(
+        currentUser!.id,
+        recipientId,
+        secMsgTitle.trim(),
+        secMsgContent.trim(),
+        selectedSecCaseId ? selectedSecCaseId : undefined
+      );
+
+      setSecMsgSuccess("ההודעה נשלחה למזכירות בהצלחה!");
+      setSecMsgTitle("");
+      setSecMsgContent("");
+      setSelectedSecCaseId("");
+
+      setTimeout(() => {
+        setShowSendMessageToSecModal(false);
+        setSecMsgSuccess("");
+        if (currentUser) loadClientData(currentUser.id);
+      }, 1500);
+    } catch (err: any) {
+      console.error("Failed to send message to secretariat:", err);
+      setSecMsgError(err.message || "שגיאה בשליחת ההודעה.");
     } finally {
       setUploading(false);
     }
@@ -523,6 +586,14 @@ function ClientDashboardContent() {
                 )}
               </div>
             </div>
+
+            <button
+              onClick={() => setShowSendMessageToSecModal(true)}
+              className="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-[#eadeca] text-[#8b5a2b] hover:bg-[#faf6ee] font-bold text-xs transition-all cursor-pointer"
+            >
+              <Mail className="h-4 w-4" />
+              <span>שלח הודעה חדשה למזכירות</span>
+            </button>
 
             <div className="mt-6 pt-4 border-t border-[#eadeca] text-[10px] text-slate-450 font-normal">
               סה"כ הודעות במערכת: {myMessages.length}
@@ -1009,6 +1080,108 @@ function ClientDashboardContent() {
                   className="px-5 py-2 rounded-xl gold-button font-bold cursor-pointer disabled:opacity-50"
                 >
                   {uploading ? 'מעלה...' : 'העלה מסמך'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* מודל שליחת הודעה חדשה למזכירות */}
+      {showSendMessageToSecModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/40 backdrop-blur-sm animate-fade-in">
+          <div className="parchment-panel w-full max-w-md p-6 border-[#eadeca] shadow-2xl animate-in fade-in zoom-in duration-200 torah-card">
+            
+            <div className="flex items-center justify-between border-b border-[#eadeca] pb-3 mb-5">
+              <h3 className="text-lg font-bold text-serif text-[#2d1e10] flex items-center gap-2">
+                <Mail className="h-5 w-5 text-[#8b5a2b]" />
+                <span>שליחת הודעה למזכירות בית הדין</span>
+              </h3>
+              <button
+                onClick={() => {
+                  setShowSendMessageToSecModal(false);
+                  setSecMsgError("");
+                  setSecMsgSuccess("");
+                }}
+                className="text-[#5c4a3c] hover:text-[#2d1e10] text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSendMessageToSecSubmit} className="space-y-4 text-xs font-semibold">
+              <div>
+                <label className="block text-[#2d1e10] mb-1">נושא ההודעה *:</label>
+                <input
+                  type="text"
+                  placeholder="לדוגמה: בקשה לבירור מועד דיון או הגשת חסר"
+                  value={secMsgTitle}
+                  onChange={(e) => setSecMsgTitle(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#2d1e10] mb-1">שיוך לתיק (אופציונלי):</label>
+                <select
+                  value={selectedSecCaseId}
+                  onChange={(e) => setSelectedSecCaseId(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium"
+                >
+                  <option value="">ללא שיוך לתיק ספציפי</option>
+                  {cases.map(c => (
+                    <option key={c.id} value={c.id}>
+                      תיק מספר {c.case_number} - {c.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[#2d1e10] mb-1">תוכן ההודעה *:</label>
+                <textarea
+                  placeholder="כתוב את הודעתך למזכירות כאן..."
+                  value={secMsgContent}
+                  onChange={(e) => setSecMsgContent(e.target.value)}
+                  className="w-full bg-white border border-[#eadeca] rounded-xl px-3 py-3 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] font-medium h-32 resize-none"
+                  required
+                />
+              </div>
+
+              {/* שגיאות או הצלחה */}
+              {secMsgError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>{secMsgError}</span>
+                </div>
+              )}
+
+              {secMsgSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                  <span>{secMsgSuccess}</span>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-[#eadeca] flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSendMessageToSecModal(false);
+                    setSecMsgError("");
+                    setSecMsgSuccess("");
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#faf6ee] border border-[#eadeca] text-[#5c4a3c] hover:bg-[#f3eedf] cursor-pointer"
+                >
+                  ביטול
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploading}
+                  className="px-5 py-2 rounded-xl gold-button font-bold cursor-pointer"
+                >
+                  {uploading ? 'שולח...' : 'שלח הודעה'}
                 </button>
               </div>
             </form>
