@@ -8,11 +8,13 @@ export async function GET() {
     // Check auth session
     const { data: { user } } = await supabase.auth.getUser();
     
-    const [profiles, hearings, panels, cases] = await Promise.all([
-      supabase.from('profiles').select('*'),
-      supabase.from('hearings').select('*'),
-      supabase.from('panels').select('*'),
-      supabase.from('cases').select('*')
+    // Query views that bypass RLS (if created by admin)
+    const [profiles, hearings, panels, cases, participants] = await Promise.all([
+      supabase.from('debug_profiles').select('*'),
+      supabase.from('debug_hearings').select('*'),
+      supabase.from('debug_panels').select('*'),
+      supabase.from('debug_cases').select('*'),
+      supabase.from('debug_case_participants').select('*')
     ]);
 
     return NextResponse.json({
@@ -26,7 +28,9 @@ export async function GET() {
       panels: panels.data || [],
       panelsError: panels.error || null,
       cases: cases.data || [],
-      casesError: cases.error || null
+      casesError: cases.error || null,
+      participants: participants.data || [],
+      participantsError: participants.error || null
     });
   } catch (err: any) {
     return NextResponse.json({
