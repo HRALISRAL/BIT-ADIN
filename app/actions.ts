@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { createClient } from '../lib/supabase/server';
 import { dbSupabaseService } from '../lib/services/dbSupabaseService';
 import { DocumentType } from '../types';
+import { emailService } from '../lib/services/emailService';
 
 // =========================================================================
 // פונקציית עזר לטיפול מאובטח בשגיאות (מונעת ערפול של Next.js בייצור)
@@ -156,13 +157,58 @@ export async function scheduleHearingAction(data: z.infer<typeof scheduleHearing
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Unauthorized");
 
-    return await dbSupabaseService.scheduleHearing(
+    const result = await dbSupabaseService.scheduleHearing(
       supabase,
       validated.caseId,
       validated.panelId,
       validated.dateStr,
       validated.timeStr
     );
+
+    // Fetch case participants' emails for notifications
+    try {
+      const { data: caseObj } = await supabase
+        .from('cases')
+        .select(`
+          case_number,
+          title,
+          panels (name),
+          case_participants (
+            party_role,
+            profiles (email)
+          )
+        `)
+        .eq('id', validated.caseId)
+        .single();
+
+      if (caseObj) {
+        const emails: string[] = [];
+        caseObj.case_participants?.forEach((cp: any) => {
+          if (cp.profiles?.email) {
+            emails.push(cp.profiles.email);
+          }
+        });
+
+        if (emails.length > 0) {
+          const panelObj = caseObj.panels as any;
+          const panelName = Array.isArray(panelObj)
+            ? (panelObj[0]?.name || 'ללא שיוך')
+            : (panelObj?.name || 'ללא שיוך');
+          await emailService.sendHearingNotification(
+            emails,
+            caseObj.case_number,
+            caseObj.title,
+            validated.dateStr,
+            validated.timeStr,
+            panelName
+          );
+        }
+      }
+    } catch (emailErr) {
+      console.error("Failed to send hearing scheduled email:", emailErr);
+    }
+
+    return result;
   });
 }
 
@@ -188,7 +234,7 @@ export async function uploadDocumentAction(data: z.infer<typeof uploadDocumentSc
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Unauthorized");
 
-    return await dbSupabaseService.uploadDocument(
+    const result = await dbSupabaseService.uploadDocument(
       supabase,
       validated.hearingId,
       validated.userId,
@@ -197,6 +243,29 @@ export async function uploadDocumentAction(data: z.infer<typeof uploadDocumentSc
       validated.fileBlobMockUrl,
       validated.folderType
     );
+
+    // Notify secretariat if a litigant uploaded a hearing document
+    try {
+      const [profileRes, hearingRes] = await Promise.all([
+        supabase.from('profiles').select('system_role, full_name').eq('id', validated.userId).single(),
+        supabase.from('hearings').select('case_id, cases(case_number, title)').eq('id', validated.hearingId).single()
+      ]);
+
+      if (profileRes.data?.system_role === 'litigant' && hearingRes.data?.cases) {
+        const caseObj = hearingRes.data.cases as any;
+        await emailService.sendDocumentUploadedNotification(
+          'h7130648@gmail.com',
+          caseObj.case_number,
+          caseObj.title,
+          profileRes.data.full_name,
+          validated.fileName
+        );
+      }
+    } catch (emailErr) {
+      console.error("Failed to send hearing document upload notification email:", emailErr);
+    }
+
+    return result;
   });
 }
 
@@ -207,7 +276,7 @@ export async function uploadCaseDocumentAction(data: z.infer<typeof uploadCaseDo
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Unauthorized");
 
-    return await dbSupabaseService.uploadCaseDocument(
+    const result = await dbSupabaseService.uploadCaseDocument(
       supabase,
       validated.caseId,
       validated.userId,
@@ -216,6 +285,28 @@ export async function uploadCaseDocumentAction(data: z.infer<typeof uploadCaseDo
       validated.filePath,
       validated.folderType
     );
+
+    // Notify secretariat if a litigant uploaded a case document
+    try {
+      const [profileRes, caseRes] = await Promise.all([
+        supabase.from('profiles').select('system_role, full_name').eq('id', validated.userId).single(),
+        supabase.from('cases').select('case_number, title').eq('id', validated.caseId).single()
+      ]);
+
+      if (profileRes.data?.system_role === 'litigant' && caseRes.data) {
+        await emailService.sendDocumentUploadedNotification(
+          'h7130648@gmail.com', // Secretariat email
+          caseRes.data.case_number,
+          caseRes.data.title,
+          profileRes.data.full_name,
+          validated.fileName
+        );
+      }
+    } catch (emailErr) {
+      console.error("Failed to send document upload notification email:", emailErr);
+    }
+
+    return result;
   });
 }
 
@@ -331,13 +422,35 @@ export async function createDocumentRequestAction(data: z.infer<typeof createDoc
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Unauthorized");
 
-    return await dbSupabaseService.createDocumentRequest(
+    const result = await dbSupabaseService.createDocumentRequest(
       supabase,
       validated.caseId,
       validated.requestedTo,
       validated.title,
       validated.description
     );
+
+    // Send email notification to the user whom the document is requested from
+    try {
+      const [caseRes, profileRes] = await Promise.all([
+        supabase.from('cases').select('case_number, title').eq('id', validated.caseId).single(),
+        supabase.from('profiles').select('email').eq('id', validated.requestedTo).single()
+      ]);
+
+      if (caseRes.data && profileRes.data?.email) {
+        await emailService.sendDocumentRequestNotification(
+          profileRes.data.email,
+          caseRes.data.case_number,
+          caseRes.data.title,
+          validated.title,
+          validated.description || ''
+        );
+      }
+    } catch (emailErr) {
+      console.error("Failed to send document request email:", emailErr);
+    }
+
+    return result;
   });
 }
 
