@@ -49,42 +49,47 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // קבלת המשתמש המחובר באופן מאובטח
-  const { data: { user } } = await supabase.auth.getUser();
+  try {
+    // קבלת המשתמש המחובר באופן מאובטח
+    const { data: { user } } = await supabase.auth.getUser();
 
-  const path = request.nextUrl.pathname;
+    const path = request.nextUrl.pathname;
 
-  // אם לא מחובר, הפנה לדף הבית להתחברות
-  if (!user) {
+    // אם לא מחובר, הפנה לדף הבית להתחברות
+    if (!user) {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+
+    // שליפת פרופיל המשתמש לבירור התפקיד שלו
+    const { data: profile, error: profileErr } = await supabase
+      .from('profiles')
+      .select('system_role')
+      .eq('id', user.id)
+      .single();
+
+    if (profileErr || !profile) {
+      // אם אין פרופיל, המשתמש אינו מורשה במערכת. נחזיר אותו לדף הבית עם שגיאה
+      return NextResponse.redirect(new URL('/?error=' + encodeURIComponent('המייל אינו רשום במערכת. אנא פנה למזכירות.'), request.url));
+    }
+
+    const role = profile?.system_role;
+
+    // חסימת כניסה לנתיבי מזכירות למי שאינו מוגדר כ-secretariat
+    if (path.startsWith('/dashboard/secretariat')) {
+      if (role !== 'secretariat') {
+        return NextResponse.redirect(new URL('/dashboard/client', request.url));
+      }
+    }
+
+    // חסימת כניסה לנתיבי לקוחות למי שמוגדר כ-secretariat (הפניה לנתיב המתאים לו)
+    if (path.startsWith('/dashboard/client')) {
+      if (role === 'secretariat') {
+        return NextResponse.redirect(new URL('/dashboard/secretariat', request.url));
+      }
+    }
+  } catch (err) {
+    console.error("Middleware auth check failed:", err);
     return NextResponse.redirect(new URL('/', request.url));
-  }
-
-  // שליפת פרופיל המשתמש לבירור התפקיד שלו
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('system_role')
-    .eq('id', user.id)
-    .single();
-
-  if (!profile) {
-    // אם אין פרופיל, המשתמש אינו מורשה במערכת. נחזיר אותו לדף הבית עם שגיאה
-    return NextResponse.redirect(new URL('/?error=' + encodeURIComponent('המייל אינו רשום במערכת. אנא פנה למזכירות.'), request.url));
-  }
-
-  const role = profile?.system_role;
-
-  // חסימת כניסה לנתיבי מזכירות למי שאינו מוגדר כ-secretariat
-  if (path.startsWith('/dashboard/secretariat')) {
-    if (role !== 'secretariat') {
-      return NextResponse.redirect(new URL('/dashboard/client', request.url));
-    }
-  }
-
-  // חסימת כניסה לנתיבי לקוחות למי שמוגדר כ-secretariat (הפניה לנתיב המתאים לו)
-  if (path.startsWith('/dashboard/client')) {
-    if (role === 'secretariat') {
-      return NextResponse.redirect(new URL('/dashboard/secretariat', request.url));
-    }
   }
 
   return response;
