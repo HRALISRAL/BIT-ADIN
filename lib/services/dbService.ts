@@ -140,7 +140,7 @@ export const dbService = {
     if (isMockMode || !supabase) {
       return dbMockService.uploadDocument(hearingId, userId, documentType, fileName, fileBlobMockUrl, folderType);
     }
-    return handleAction(uploadDocumentAction({ hearingId, userId, documentType, fileName, fileBlobMockUrl, folderType: folderType || 'General' }));
+    return handleAction(uploadDocumentAction({ hearingId, userId, documentType, fileName, fileBlobMockUrl, folderType }));
   },
 
   async toggleDocumentShare(documentId: string, isShared: boolean): Promise<boolean> {
@@ -240,7 +240,7 @@ export const dbService = {
     if (isMockMode || !supabase) {
       return dbMockService.uploadCaseDocument(caseId, userId, documentType, fileName, filePath, folderType);
     }
-    return handleAction(uploadCaseDocumentAction({ caseId, userId, documentType, fileName, filePath, folderType: folderType || 'General' }));
+    return handleAction(uploadCaseDocumentAction({ caseId, userId, documentType, fileName, filePath, folderType }));
   },
 
   async deleteProfile(userId: string): Promise<boolean> {
