@@ -27,6 +27,7 @@ function ClientDashboardContent() {
   // תיק/דיון פעיל נבחר לצפייה במסמכים
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [activeCaseDocs, setActiveCaseDocs] = useState<Document[]>([]);
+  const [showCaseDocs, setShowCaseDocs] = useState(false);
   const [activeHearing, setActiveHearing] = useState<Hearing | null>(null);
   const [activeHearingDocs, setActiveHearingDocs] = useState<Document[]>([]);
   const [userRoleInActiveCase, setUserRoleInActiveCase] = useState<'plaintiff' | 'defendant' | null>(null);
@@ -169,6 +170,7 @@ function ClientDashboardContent() {
 
   const handleSelectCase = async (c: Case, uid: string) => {
     setSelectedCase(c);
+    setShowCaseDocs(false);
     const participant = c.participants?.find(p => p.user_id === uid);
     setUserRoleInActiveCase(participant?.party_role || null);
     try {
@@ -707,195 +709,252 @@ function ClientDashboardContent() {
               
               {selectedCase ? (
                 <>
-                  <div className="border-b border-[#eadeca] pb-4">
-                    <h3 className="text-lg font-bold text-serif text-[#2d1e10] flex items-center gap-2">
-                      <ShieldCheck className="h-5 w-5 text-[#8b5a2b]" />
-                      <span>תיקיית מסמכים מאובטחת לתיק</span>
-                    </h3>
-                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      <span className="text-xs text-[#5c4a3c] font-bold">מספר תיק:</span>
-                      <span className="bg-[#8b5a2b]/5 px-2 py-0.5 text-[11px] font-black tracking-wider text-amber-800 border border-[#eadfcd] rounded-lg shadow-sm">
-                        {selectedCase.case_number}
-                      </span>
-                      <span className="text-xs text-[#5c4a3c] font-bold mr-2">תפקידך בתיק:</span>
-                      <strong className={`text-xs ${
-                        userRoleInActiveCase === 'plaintiff' ? 'text-[#a27b18]' : 'text-indigo-800'
-                      }`}>{userRoleInActiveCase === 'plaintiff' ? 'תובע' : 'נתבע'}</strong>
-                    </div>
-                  </div>
-
-                  {/* 1) מנגנון העלאת מסמך לתיק */}
-                  <div className="p-4 rounded-xl bg-[#faf6ee]/60 border border-[#eadeca] space-y-4">
+                  <div className="border-b border-[#eadeca] pb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
-                      <h4 className="font-bold text-[#2d1e10] text-xs flex items-center gap-1.5">
-                        <Upload className="h-4 w-4 text-[#8b5a2b]" />
-                        <span>העלאת מסמך חדש לתיק</span>
-                      </h4>
-                      <p className="text-[10px] text-[#5c4a3c] font-medium mt-1">
-                        מסמך זה יישמר בתיקיית ה{userRoleInActiveCase === 'plaintiff' ? 'תובע' : 'נתבע'} הפרטית שלך.
-                        סגל המזכירות בלבד מורשה לצפות בו. צד הנגד חסום לצפייה במסמך זה, אלא אם המזכירות תאשר שיתוף ידני.
-                      </p>
-                    </div>
-
-                    <form onSubmit={handleUploadDocumentSubmit} className="space-y-3">
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={(e) => {
-                          if (e.target.files && e.target.files[0]) {
-                            setSelectedFileObject(e.target.files[0]);
-                            if (!uploadFileSelectorName) {
-                              setUploadFileSelectorName(e.target.files[0].name);
-                            }
-                          }
-                        }}
-                        className="hidden"
-                        id="client-file-upload"
-                      />
-
-                      <div className="flex flex-col gap-3">
-                        <input
-                          type="text"
-                          placeholder="כותרת המסמך (לדוגמה: נימוקים נוספים לתביעה)"
-                          value={uploadFileSelectorName}
-                          onChange={(e) => setUploadFileSelectorName(e.target.value)}
-                          className="w-full bg-white border border-[#eadeca] rounded-lg px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
-                          required
-                        />
-
-                        <div className="flex gap-2 items-center">
-                          <label
-                            htmlFor="client-file-upload"
-                            className="flex-1 flex items-center justify-center border border-dashed border-[#eadeca] hover:border-[#cda851] rounded-lg p-2.5 bg-white cursor-pointer transition-all gap-1.5 text-[11px] font-bold text-[#5c4a3c] truncate"
-                          >
-                            <Upload className="h-3.5 w-3.5 text-[#8b5a2b]" />
-                            <span className="truncate">
-                              {selectedFileObject ? `קובץ: ${selectedFileObject.name}` : "בחר קובץ מהמחשב"}
-                            </span>
-                          </label>
-
-                          <button
-                            type="submit"
-                            disabled={uploading || !uploadFileSelectorName.trim() || (!isMockMode && !selectedFileObject)}
-                            className="px-5 py-2.5 rounded-lg gold-button font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50 text-xs flex-shrink-0"
-                          >
-                            <span>{uploading ? 'מעלה...' : 'העלה מסמך'}</span>
-                          </button>
-                        </div>
+                      <h3 className="text-lg font-bold text-serif text-[#2d1e10] flex items-center gap-2">
+                        <ShieldCheck className="h-5 w-5 text-[#8b5a2b]" />
+                        <span>פרטי התיק ומסמכים</span>
+                      </h3>
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <span className="text-xs text-[#5c4a3c] font-bold">מספר תיק:</span>
+                        <span className="bg-[#8b5a2b]/5 px-2 py-0.5 text-[11px] font-black tracking-wider text-amber-800 border border-[#eadfcd] rounded-lg shadow-sm">
+                          {selectedCase.case_number}
+                        </span>
+                        <span className="text-xs text-[#5c4a3c] font-bold mr-2">תפקידך בתיק:</span>
+                        <strong className={`text-xs ${
+                          userRoleInActiveCase === 'plaintiff' ? 'text-[#a27b18]' : 'text-indigo-800'
+                        }`}>{userRoleInActiveCase === 'plaintiff' ? 'תובע' : 'נתבע'}</strong>
                       </div>
-                    </form>
+                    </div>
+                    <button
+                      onClick={() => setShowCaseDocs(prev => !prev)}
+                      className="px-4 py-2 rounded-xl gold-button font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+                    >
+                      <FileText className="h-4 w-4" />
+                      <span>{showCaseDocs ? 'הסתר קבצים ומסמכים' : 'הצג קבצים ומסמכים בתיק'}</span>
+                    </button>
                   </div>
 
-                  {/* 2) תצוגת מסמכים מבוססת הרשאות */}
-                  <div className="space-y-4 text-xs font-semibold">
-                    
-                    {/* א. המסמכים שלי (בלעדי לי) */}
-                    <div className="space-y-2">
-                      <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 flex items-center gap-1 text-[11px] uppercase tracking-wider text-serif">
-                        <FileText className="h-3.5 w-3.5" />
-                        <span>מסמכים שהועלו על ידך (תיקייה פרטית)</span>
-                      </h4>
-                      
-                      {activeCaseDocs.filter(d => d.uploaded_by === currentUser?.id).length === 0 ? (
-                        <p className="text-slate-400 italic py-2 font-normal">טרם העלית מסמכים לתיק זה.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {activeCaseDocs.filter(d => d.uploaded_by === currentUser?.id).map(d => (
-                            <div key={d.id} className="p-3 rounded-lg bg-white border border-[#eadeca] flex items-center justify-between gap-3">
-                              <div>
-                                <strong className="text-[#2d1e10] block text-serif">{d.file_name}</strong>
-                                <span className="text-[10px] text-[#5c4a3c] font-medium">
-                                  הועלה בתאריך: {new Date(d.created_at).toLocaleDateString('he-IL')} | שיתוף: {
-                                    d.is_shared 
-                                      ? <span className="text-emerald-700 font-bold">משותף עם הצד השני</span> 
-                                      : <span className="text-slate-500 font-normal">חסוי לצד השני</span>
-                                  }
-                                </span>
-                              </div>
-                              <a 
-                                href={d.file_path} 
-                                download 
-                                className="p-2 rounded bg-[#faf6ee] border border-[#eadeca] hover:bg-[#f3eedf] text-[#8b5a2b] transition-all"
-                                title="הורד מסמך"
+                  {showCaseDocs ? (
+                    <>
+                      {/* 1) מנגנון העלאת מסמך לתיק */}
+                      <div className="p-4 rounded-xl bg-[#faf6ee]/60 border border-[#eadeca] space-y-4">
+                        <div>
+                          <h4 className="font-bold text-[#2d1e10] text-xs flex items-center gap-1.5">
+                            <Upload className="h-4 w-4 text-[#8b5a2b]" />
+                            <span>העלאת מסמך חדש לתיק</span>
+                          </h4>
+                          <p className="text-[10px] text-[#5c4a3c] font-medium mt-1">
+                            מסמך זה יישמר בתיקיית ה{userRoleInActiveCase === 'plaintiff' ? 'תובע' : 'נתבע'} הפרטית שלך.
+                            סגל המזכירות בלבד מורשה לצפות בו. צד הנגד חסום לצפייה במסמך זה, אלא אם המזכירות תאשר שיתוף ידני.
+                          </p>
+                        </div>
+
+                        <form onSubmit={handleUploadDocumentSubmit} className="space-y-3">
+                          <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={(e) => {
+                              if (e.target.files && e.target.files[0]) {
+                                setSelectedFileObject(e.target.files[0]);
+                                if (!uploadFileSelectorName) {
+                                  setUploadFileSelectorName(e.target.files[0].name);
+                                }
+                              }
+                            }}
+                            className="hidden"
+                            id="client-file-upload"
+                          />
+
+                          <div className="flex flex-col gap-3">
+                            <input
+                              type="text"
+                              placeholder="כותרת המסמך (לדוגמה: נימוקים נוספים לתביעה)"
+                              value={uploadFileSelectorName}
+                              onChange={(e) => setUploadFileSelectorName(e.target.value)}
+                              className="w-full bg-white border border-[#eadeca] rounded-lg px-3 py-2 text-[#2d1e10] focus:outline-none focus:ring-1 focus:ring-[#cda851] text-xs font-medium"
+                              required
+                            />
+
+                            <div className="flex gap-2 items-center">
+                              <label
+                                htmlFor="client-file-upload"
+                                className="flex-1 flex items-center justify-center border border-dashed border-[#eadeca] hover:border-[#cda851] rounded-lg p-2.5 bg-white cursor-pointer transition-all gap-1.5 text-[11px] font-bold text-[#5c4a3c] truncate"
                               >
-                                <Download className="h-4.5 w-4.5" />
-                              </a>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* ב. מסמכים משותפים מצד הנגד (חסימה מלאה למעט מאושרים) */}
-                    <div className="space-y-2 pt-2">
-                      <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 flex items-center gap-1 text-[11px] uppercase tracking-wider text-serif">
-                        <ShieldCheck className="h-3.5 w-3.5" />
-                        <span>חומרים משותפים מצד הנגד (באישור המזכירות בלבד)</span>
-                      </h4>
-
-                      {activeCaseDocs.filter(d => d.uploaded_by !== currentUser?.id && d.document_type !== 'secretariat').length === 0 ? (
-                        <div className="p-3 rounded-lg bg-[#faf6ee]/60 border border-[#eadeca] text-[#5c4a3c] flex items-center gap-2 font-medium">
-                          <AlertCircle className="h-4 w-4 text-[#a27b18]" />
-                          <span>אין מסמכים משותפים מצד הנגד. (חסימת הפרדה קשיחה פעילה)</span>
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {activeCaseDocs.filter(d => d.uploaded_by !== currentUser?.id && d.document_type !== 'secretariat').map(d => (
-                            <div key={d.id} className="p-3 rounded-lg bg-white border border-[#eadeca] flex items-center justify-between gap-3">
-                              <div>
-                                <strong className="text-[#2d1e10] block text-serif">{d.file_name}</strong>
-                                <span className="text-[10px] text-[#5c4a3c] font-medium">
-                                  הועלה על ידי צד הנגד | אושר לשיתוף בתיק
+                                <Upload className="h-3.5 w-3.5 text-[#8b5a2b]" />
+                                <span className="truncate">
+                                  {selectedFileObject ? `קובץ: ${selectedFileObject.name}` : "בחר קובץ מהמחשב"}
                                 </span>
-                              </div>
-                              <a 
-                                href={d.file_path} 
-                                download 
-                                className="p-2 rounded bg-[#faf6ee] border border-[#eadeca] hover:bg-[#f3eedf] text-[#8b5a2b] transition-all"
-                                title="הורד מסמך"
+                              </label>
+
+                              <button
+                                type="submit"
+                                disabled={uploading || !uploadFileSelectorName.trim() || (!isMockMode && !selectedFileObject)}
+                                className="px-5 py-2.5 rounded-lg gold-button font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50 text-xs flex-shrink-0"
                               >
-                                <Download className="h-4.5 w-4.5" />
-                              </a>
+                                <span>{uploading ? 'מעלה...' : 'העלה מסמך'}</span>
+                              </button>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                          </div>
+                        </form>
+                      </div>
 
-                    {/* ג. פרוטוקולים והחלטות בית הדין */}
-                    <div className="space-y-2 pt-2">
-                      <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 flex items-center gap-1 text-[11px] uppercase tracking-wider text-serif">
-                        <Scale className="h-3.5 w-3.5" />
-                        <span>החלטות ופרוטוקולים של בית הדין</span>
-                      </h4>
-
-                      {activeCaseDocs.filter(d => d.document_type === 'secretariat').length === 0 ? (
-                        <p className="text-slate-400 italic py-2 font-normal">טרם ניתנו החלטות/פרוטוקולים בתיק זה.</p>
-                      ) : (
+                      {/* 2) תצוגת מסמכים מבוססת הרשאות */}
+                      <div className="space-y-4 text-xs font-semibold">
+                        
+                        {/* א. המסמכים שלי (בלעדי לי) */}
                         <div className="space-y-2">
-                          {activeCaseDocs.filter(d => d.document_type === 'secretariat').map(d => (
-                            <div key={d.id} className="p-3 rounded-lg bg-white border border-[#eadeca] flex items-center justify-between gap-3">
-                              <div>
-                                <strong className="text-[#2d1e10] block text-serif">{d.file_name}</strong>
-                                <span className="text-[10px] text-[#5c4a3c] font-medium">
-                                  החלטה רשמית של בית הדין האזורי
-                                </span>
-                              </div>
-                              <a 
-                                href={d.file_path} 
-                                download 
-                                className="p-2 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold hover:bg-emerald-600 hover:text-white transition-all"
-                                title="הורד החלטה"
-                              >
-                                <Download className="h-4.5 w-4.5" />
-                              </a>
+                          <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 flex items-center gap-1 text-[11px] uppercase tracking-wider text-serif">
+                            <FileText className="h-3.5 w-3.5" />
+                            <span>מסמכים שהועלו על ידך (תיקייה פרטית)</span>
+                          </h4>
+                          
+                          {activeCaseDocs.filter(d => d.uploaded_by === currentUser?.id).length === 0 ? (
+                            <p className="text-slate-400 italic py-2 font-normal">טרם העלית מסמכים לתיק זה.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {activeCaseDocs.filter(d => d.uploaded_by === currentUser?.id).map(d => (
+                                <div key={d.id} className="p-3 rounded-lg bg-white border border-[#eadeca] flex items-center justify-between gap-3">
+                                  <div>
+                                    <strong className="text-[#2d1e10] block text-serif">{d.file_name}</strong>
+                                    <span className="text-[10px] text-[#5c4a3c] font-medium">
+                                      הועלה בתאריך: {new Date(d.created_at).toLocaleDateString('he-IL')} | שיתוף: {
+                                        d.is_shared 
+                                          ? <span className="text-emerald-700 font-bold">משותף עם הצד השני</span> 
+                                          : <span className="text-slate-500 font-normal">חסוי לצד השני</span>
+                                      }
+                                    </span>
+                                  </div>
+                                  <a 
+                                    href={d.file_path} 
+                                    download 
+                                    className="p-2 rounded bg-[#faf6ee] border border-[#eadeca] hover:bg-[#f3eedf] text-[#8b5a2b] transition-all"
+                                    title="הורד מסמך"
+                                  >
+                                    <Download className="h-4.5 w-4.5" />
+                                  </a>
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          )}
                         </div>
-                      )}
-                    </div>
 
-                  </div>
+                        {/* ב. מסמכים משותפים מצד הנגד (חסימה מלאה למעט מאושרים) */}
+                        <div className="space-y-2 pt-2">
+                          <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 flex items-center gap-1 text-[11px] uppercase tracking-wider text-serif">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            <span>חומרים משותפים מצד הנגד (באישור המזכירות בלבד)</span>
+                          </h4>
+
+                          {activeCaseDocs.filter(d => d.uploaded_by !== currentUser?.id && d.document_type !== 'secretariat').length === 0 ? (
+                            <div className="p-3 rounded-lg bg-[#faf6ee]/60 border border-[#eadeca] text-[#5c4a3c] flex items-center gap-2 font-medium">
+                              <AlertCircle className="h-4 w-4 text-[#a27b18]" />
+                              <span>אין מסמכים משותפים מצד הנגד. (חסימת הפרדה קשיחה פעילה)</span>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {activeCaseDocs.filter(d => d.uploaded_by !== currentUser?.id && d.document_type !== 'secretariat').map(d => (
+                                <div key={d.id} className="p-3 rounded-lg bg-white border border-[#eadeca] flex items-center justify-between gap-3">
+                                  <div>
+                                    <strong className="text-[#2d1e10] block text-serif">{d.file_name}</strong>
+                                    <span className="text-[10px] text-[#5c4a3c] font-medium">
+                                      הועלה על ידי צד הנגד | אושר לשיתוף בתיק
+                                    </span>
+                                  </div>
+                                  <a 
+                                    href={d.file_path} 
+                                    download 
+                                    className="p-2 rounded bg-[#faf6ee] border border-[#eadeca] hover:bg-[#f3eedf] text-[#8b5a2b] transition-all"
+                                    title="הורד מסמך"
+                                  >
+                                    <Download className="h-4.5 w-4.5" />
+                                  </a>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ג. פרוטוקולים והחלטות בית הדין */}
+                        <div className="space-y-2 pt-2">
+                          <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 flex items-center gap-1 text-[11px] uppercase tracking-wider text-serif">
+                            <Scale className="h-3.5 w-3.5" />
+                            <span>החלטות ופרוטוקולים של בית הדין</span>
+                          </h4>
+
+                          {activeCaseDocs.filter(d => d.document_type === 'secretariat').length === 0 ? (
+                            <p className="text-slate-400 italic py-2 font-normal">טרם ניתנו החלטות/פרוטוקולים בתיק זה.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {activeCaseDocs.filter(d => d.document_type === 'secretariat').map(d => (
+                                <div key={d.id} className="p-3 rounded-lg bg-white border border-[#eadeca] flex items-center justify-between gap-3">
+                                  <div>
+                                    <strong className="text-[#2d1e10] block text-serif">{d.file_name}</strong>
+                                    <span className="text-[10px] text-[#5c4a3c] font-medium">
+                                      החלטה רשמית של בית הדין האזורי
+                                    </span>
+                                  </div>
+                                  <a 
+                                    href={d.file_path} 
+                                    download 
+                                    className="p-2 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold hover:bg-emerald-600 hover:text-white transition-all"
+                                    title="הורד החלטה"
+                                  >
+                                    <Download className="h-4.5 w-4.5" />
+                                  </a>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                      </div>
+                    </>
+                  ) : (
+                    /* תצוגת סיכום התיק כאשר המסמכים סגורים */
+                    <div className="py-8 text-center space-y-6 dir-rtl text-right">
+                      <div className="max-w-md mx-auto space-y-3 bg-[#faf6ee]/40 border border-[#eadeca]/60 rounded-2xl p-6">
+                        <FileText className="h-10 w-10 text-[#8b5a2b] mx-auto stroke-1.5 opacity-80" />
+                        <h4 className="font-bold text-[#2d1e10] text-sm text-serif">תיקיית מסמכים מאובטחת</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed font-normal">
+                          לחץ על הכפתור **"הצג קבצים ומסמכים בתיק"** למעלה על מנת לפתוח את תיקיית המסמכים המשויכים לתיק זה, להוריד פרוטוקולים והחלטות, או להגיש ולהעלות מסמך חדש לתיק.
+                        </p>
+                      </div>
+
+                      {/* הצגת דיונים קרובים המשויכים לתיק זה */}
+                      <div className="space-y-3">
+                        <h4 className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1.5 flex items-center gap-1.5 text-xs text-serif">
+                          <Calendar className="h-4 w-4" />
+                          <span>דיונים קרובים בתיק זה</span>
+                        </h4>
+                        
+                        {hearings.filter(h => h.case_id === selectedCase.id).length === 0 ? (
+                          <p className="text-slate-400 italic py-2 text-xs font-normal">אין דיונים משובצים עבור תיק זה כעת.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {hearings.filter(h => h.case_id === selectedCase.id).map(h => (
+                              <div key={h.id} className="p-3.5 rounded-lg bg-white border border-[#eadeca] flex items-center justify-between text-xs font-bold shadow-sm">
+                                <div className="space-y-1">
+                                  <div className="text-[#2d1e10] text-serif">{h.case_title}</div>
+                                  <div className="text-[10px] text-slate-500 font-normal">הרכב: {h.panel_name || 'ללא שיוך'}</div>
+                                </div>
+                                <div className="flex items-center gap-4 text-[#5c4a3c] text-[11px]">
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="h-3.5 w-3.5 text-[#8b5a2b]" />
+                                    {h.hearing_date}
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="h-3.5 w-3.5 text-[#8b5a2b]" />
+                                    {h.hearing_time}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="h-64 flex flex-col items-center justify-center text-slate-400 text-center">
