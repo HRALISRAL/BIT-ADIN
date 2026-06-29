@@ -1736,7 +1736,7 @@ export default function SecretariatDashboard() {
                     return (
                       <div
                         key={day.toISOString()}
-                        className={`min-h-[100px] border p-2 rounded-xl flex flex-col justify-between transition-all ${
+                        className={`relative group min-h-[100px] border p-2 rounded-xl flex flex-col justify-between transition-all ${
                           isToday 
                             ? 'bg-white border-[#cda851] shadow-md shadow-amber-600/5' 
                             : isWeekend
@@ -1769,6 +1769,27 @@ export default function SecretariatDashboard() {
                             </div>
                           ))}
                         </div>
+
+                        {/* חלונית צפה בעת ריחוף המציגה את כל הדיונים ביום זה בפירוט */}
+                        {dateHearings.length > 0 && (
+                          <div className="absolute bottom-full mb-2 right-1/2 translate-x-1/2 w-64 bg-[#faf6ee] border-2 border-[#eadeca] rounded-2xl shadow-xl p-4 hidden group-hover:block z-30 animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-none text-right dir-rtl">
+                            <div className="font-bold text-[#8b5a2b] border-b border-[#eadeca] pb-1 mb-2 text-xs">
+                              הדיונים ביום {dbService.getDayName(day.getDay() + 1)} ({day.getDate()} ב{hebrewMonths[day.getMonth()]})
+                            </div>
+                            <div className="space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar">
+                              {dateHearings.map(h => (
+                                <div key={h.id} className="border-b border-[#eadeca]/50 pb-1.5 last:border-0 last:pb-0 text-[11px]">
+                                  <div className="flex justify-between font-bold text-[#2d1e10]">
+                                    <span>{h.hearing_time}</span>
+                                    <span className="text-[#8b5a2b]">{h.case_number}</span>
+                                  </div>
+                                  <div className="font-medium text-slate-750 truncate">{h.case_title}</div>
+                                  <div className="text-[10px] text-slate-500 truncate">{h.panel_name || 'ללא שיוך'}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
