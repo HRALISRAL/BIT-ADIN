@@ -715,13 +715,7 @@ export default function SecretariatDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowSettingsModal(true)}
-              className="p-2.5 rounded-xl bg-[#faf6ee] hover:bg-[#f3eedf] border border-[#eadeca] text-[#5c4a3c] transition-all cursor-pointer"
-              title="הגדרות בית הדין"
-            >
-              <Settings className="h-4 w-4" />
-            </button>
+
             <button
               onClick={async () => {
                 localStorage.clear();
@@ -743,7 +737,7 @@ export default function SecretariatDashboard() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-8">
         
         {/* קוביות סטטיסטיקה עליונות */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="parchment-panel p-6 border-[#eadeca] flex items-center justify-between">
             <div>
               <p className="text-xs text-[#5c4a3c] font-bold">תיקים פעילים בבית הדין</p>
@@ -771,14 +765,6 @@ export default function SecretariatDashboard() {
               <h3 className="text-3xl font-black text-serif text-[#2d1e10] mt-1">{requests.filter(r => r.status === 'pending').length}</h3>
             </div>
             <div className="p-3 bg-amber-600/10 text-amber-800 rounded-xl"><Inbox className="h-6 w-6" /></div>
-          </div>
-
-          <div className="parchment-panel p-6 border-[#eadeca] flex items-center justify-between">
-            <div>
-              <p className="text-xs text-[#5c4a3c] font-bold">הרכבי דיינים קבועים</p>
-              <h3 className="text-3xl font-black text-serif text-[#2d1e10] mt-1">{panels.length}</h3>
-            </div>
-            <div className="p-3 bg-emerald-700/10 text-emerald-800 rounded-xl"><Users className="h-6 w-6" /></div>
           </div>
         </section>
 
