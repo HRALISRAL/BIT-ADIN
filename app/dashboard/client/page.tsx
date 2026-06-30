@@ -91,12 +91,46 @@ function ClientDashboardContent() {
         c.participants?.some(p => p.user_id === uid)
       );
       setCases(myAssociatedCases);
-      setHearings(userHearings);
+
+      // Deduplicate hearings by date, time, and case_id
+      const uniqueHearings = userHearings.filter((h, index, self) =>
+        self.findIndex(other => 
+          other.hearing_date === h.hearing_date && 
+          other.hearing_time === h.hearing_time && 
+          other.case_id === h.case_id
+        ) === index
+      );
+      setHearings(uniqueHearings);
 
       const userRequests = allRequests.filter(r => r.user_id === uid);
-      setMyRequests(userRequests);
-      setMyMessages(userMessages);
-      setMyDocRequests(docReqs);
+      // Deduplicate requests
+      const uniqueRequests = userRequests.filter((r, index, self) =>
+        self.findIndex(other => 
+          other.title === r.title && 
+          other.request_type === r.request_type && 
+          other.status === r.status
+        ) === index
+      );
+      setMyRequests(uniqueRequests);
+
+      // Deduplicate messages by title, content, and date
+      const uniqueMessages = userMessages.filter((m, index, self) =>
+        self.findIndex(other => 
+          other.title === m.title && 
+          other.content === m.content
+        ) === index
+      );
+      setMyMessages(uniqueMessages);
+
+      // Deduplicate pending document requests
+      const uniqueDocRequests = docReqs.filter((r, index, self) =>
+        self.findIndex(other => 
+          other.title === r.title && 
+          other.case_id === r.case_id && 
+          other.status === r.status
+        ) === index
+      );
+      setMyDocRequests(uniqueDocRequests);
 
       const currentSelectedId = selectedCase?.id;
       const preservedCase = currentSelectedId ? myAssociatedCases.find(c => c.id === currentSelectedId) : null;
@@ -438,32 +472,29 @@ function ClientDashboardContent() {
       {/* גוף הדף */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-8">
 
-        {/* ווידג'ט דרישות מסמכים פתוחות - יוצג בראש הדף אם יש דרישות פתוחות */}
         {myDocRequests.filter(r => r.status === 'pending').length > 0 && (
-          <section className="bg-amber-50 border border-amber-200 rounded-2xl p-6 space-y-4 shadow-sm animate-in fade-in slide-in-from-top-4 duration-200">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-base font-bold text-serif text-amber-900 flex items-center gap-2">
-                  <Mail className="h-5 w-5 text-amber-700 animate-pulse" />
-                  <span>ממתינות לך דרישות מסמכים פתוחות מבית הדין</span>
-                </h3>
-                <p className="text-xs text-amber-800 font-semibold mt-1">
-                  המזכירות דורשת ממך להעלות מסמכים מסוימים כדי להמשיך בטיפול בתיק שלך. נא לפעול בהקדם.
-                </p>
-              </div>
+          <section className="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-5 space-y-3.5 shadow-sm animate-in fade-in slide-in-from-top-4 duration-200">
+            <div className="flex items-center gap-2">
+              <Mail className="h-4.5 w-4.5 text-amber-700 animate-pulse" />
+              <h3 className="text-sm font-bold text-serif text-amber-950">
+                דרישות מסמכים ממתינות מבית הדין
+              </h3>
+              <span className="bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full text-[9px] font-black">
+                {myDocRequests.filter(r => r.status === 'pending').length} דרישות פתוחות
+              </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {myDocRequests.filter(r => r.status === 'pending').map(req => (
-                <div key={req.id} className="p-4 rounded-xl bg-white border border-amber-100 flex flex-col justify-between gap-3 text-xs font-semibold shadow-sm hover:border-amber-300 transition-all">
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[9px] font-bold">דרישת מסמך</span>
-                      <span className="text-[10px] text-slate-400 font-medium">תיק: {req.case_number}</span>
+                <div key={req.id} className="p-3 rounded-xl bg-white border border-amber-200/65 flex items-center justify-between gap-3 text-xs font-semibold shadow-sm hover:border-amber-450 hover:shadow-md transition-all">
+                  <div className="flex-1 min-w-0 pr-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="bg-amber-100 text-amber-950 px-1.5 py-0.5 rounded text-[8px] font-extrabold">דרישת מסמך</span>
+                      <span className="text-[9px] text-amber-800 font-bold">תיק: {req.case_number}</span>
                     </div>
-                    <h4 className="font-bold text-[#2d1e10] text-sm mt-2 text-serif">{req.title}</h4>
+                    <h4 className="font-bold text-[#2d1e10] text-[11px] mt-1 text-serif truncate" title={req.title}>{req.title}</h4>
                     {req.description && (
-                      <p className="text-[#5c4a3c] text-[11px] font-normal mt-1.5 line-clamp-2">
+                      <p className="text-[#5c4a3c] text-[10px] font-normal mt-0.5 truncate" title={req.description}>
                         {req.description}
                       </p>
                     )}
@@ -471,10 +502,10 @@ function ClientDashboardContent() {
 
                   <button
                     onClick={() => handleOpenDocRequestUpload(req)}
-                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl gold-button font-bold text-xs cursor-pointer shadow-sm mt-2"
+                    className="flex-shrink-0 inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#a27b18] hover:bg-[#8b5a2b] text-white font-bold text-[9px] transition-all cursor-pointer shadow-xs"
                   >
-                    <Upload className="h-4 w-4" />
-                    <span>העלה מסמכים לתיק {req.case_number}</span>
+                    <Upload className="h-3 w-3" />
+                    <span>העלה מסמך</span>
                   </button>
                 </div>
               ))}
@@ -483,7 +514,7 @@ function ClientDashboardContent() {
         )}
 
         {/* 1. כרטיס דיון קרוב והגשת בקשות מהירה */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           
           {/* א. הדיון הקרוב שלי */}
           <div className="parchment-panel p-6 border-[#eadeca] flex flex-col justify-between torah-card">
